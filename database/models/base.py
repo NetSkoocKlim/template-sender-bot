@@ -95,7 +95,7 @@ class BaseModel(Base):
             session: AsyncSession,
             **kwargs,
     ) -> T | None:
-        """Get a record from the database by a filter."""
+        """Get a record from the database by a filters."""
         statement = select(cls).filter_by(**kwargs)
         result = await session.execute(statement)
         return result.scalars().first()
@@ -164,7 +164,7 @@ class BaseModel(Base):
             session: AsyncSession,
             **kwargs,
     ) -> T | None:
-        """Delete a record from the database by a filter."""
+        """Delete a record from the database by a filters."""
         
         instance = await cls.get_by_filter(session, **kwargs)
         if instance:
@@ -201,7 +201,7 @@ class BaseModel(Base):
             session: AsyncSession,
             **kwargs,
     ) -> bool:
-        """Check if a record exists in the database by a filter."""
+        """Check if a record exists in the database by a filters."""
         
         statement = select(cls).filter_by(**kwargs).order_by(cls.id.asc())  # noqa
         result = await session.execute(statement)
@@ -217,7 +217,7 @@ class BaseModel(Base):
             filters: t.Sequence[t.Any] = None,
             order_by: t.Union[Column, None] = None,
     ) -> t.Sequence[T]:
-        """Get paginated records from the database by a filter."""
+        """Get paginated records from the database by a filters."""
         
         statement = (
             select(cls)
@@ -255,12 +255,15 @@ class BaseModel(Base):
             cls: t.Type[T],
             session: AsyncSession,
             join_tables: t.Union[t.Any, t.List[t.Any]] = None,
+            order_by: t.Union[Column, None] = None,
     ) -> t.Sequence[T]:
         """Get all records from the database."""
         
         statement = select(cls)
         if join_tables is not None:
             statement = statement.options(selectinload(*join_tables))
+        if order_by:
+            statement = statement.order_by(order_by)
         result = await session.execute(statement)
         return result.scalars().all()
 
@@ -269,12 +272,16 @@ class BaseModel(Base):
             cls: t.Type[T],
             session: AsyncSession,
             join_tables: t.Union[t.Any, t.List[t.Any]] = None,
+            order_by: t.Union[Column, None] = None,
             **kwargs,
+
     ) -> t.Sequence[T]:
-        """Get all records from the database by a filter."""
+        """Get all records from the database by a filters."""
         
         statement = select(cls).filter_by(**kwargs)
         if join_tables is not None:
             statement = statement.options(selectinload(*join_tables))
+        if order_by:
+            statement = statement.order_by(order_by)
         result = await session.execute(statement)
         return result.scalars().all()

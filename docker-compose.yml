@@ -1,0 +1,40 @@
+services:
+  postgres:
+    container_name: db_postgres
+    image: postgres:18-alpine
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    ports:
+      - "${DB_HOST}:${DB_PORT}:5432"
+
+  redis:
+    container_name: redis
+    image: redis:7.4-alpine
+    env_file: .env
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redisdata:/data
+    ports:
+      - "${REDIS_HOST}:${REDIS_PORT}:6379"
+
+volumes:
+  pgdata:
+  redisdata:
