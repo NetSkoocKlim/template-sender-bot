@@ -5,7 +5,7 @@ from config import settings
 
 
 class DBHelper:
-    engine = create_async_engine(url=settings.db.URL, echo=True)
+    engine = create_async_engine(url=settings.db.URL, echo=False)
     async_session = async_sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)
 
 

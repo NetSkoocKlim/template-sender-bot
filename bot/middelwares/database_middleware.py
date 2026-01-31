@@ -13,5 +13,5 @@ async def database_middleware(handler: Callable[[TelegramObject, Dict[str, Any]]
                               session: AsyncSession
                               ):
     data['session'] = session
-    await handler(event, data)
+    return await handler(event, data)
 

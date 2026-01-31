@@ -2,6 +2,7 @@ from enum import StrEnum, auto, Enum
 from typing import Sequence, Optional
 
 from aiogram.filters.callback_data import CallbackData
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
 from database.models import Template
@@ -12,6 +13,7 @@ class AdminPanelOptions(StrEnum):
     template = "Редактирование шаблонов"
     statistic = "Просмотр статистики"
     dispatch = "Управление рассылкой"
+    back = "Вернуться к админ-панели"
 
 
 def get_admin_panel_menu_kb():
@@ -27,7 +29,7 @@ def get_admin_panel_menu_kb():
 class AdminPanelTemplateOptions(StrEnum):
     add_template = "Создать новый шаблон"
     edit_template = "Редактировать существующие шаблоны"
-    back = "Вернуться к панели администратора"
+    back = AdminPanelOptions.back
 
 
 def get_admin_panel_template_menu_kb():
@@ -94,3 +96,37 @@ def get_template_edit_inline_kb(template: Template, template_index: int):
 
 
 
+class AdminPanelReceiverOptions(StrEnum):
+    view = "Посмотреть список пользователей"
+    expand = "Добавить пользователей в список"
+    delete = "Удалить пользователей из списка"
+    clear = "Полностью очистить список пользователей"
+
+
+def get_admin_panel_receiver_menu_kb():
+    builder = ReplyKeyboardBuilder()
+    for button in AdminPanelReceiverOptions:
+        builder.button(text=button)
+
+    builder.button(
+        text=AdminPanelOptions.back
+    )
+    builder.adjust(1, 2, 1)
+    return builder.as_markup(resize_keyboard=True,)
+
+class ReceiverData(CallbackData, prefix="receiver_data"):
+    username: str
+
+def get_receivers_list_kb(receivers: str):
+    builder = InlineKeyboardBuilder()
+    for receiver in receivers.split():
+        builder.button(text=receiver,
+                       callback_data=ReceiverData(username=receiver).pack())
+    builder.adjust(2)
+    builder.row(
+        InlineKeyboardButton(
+            text="Назад",
+            callback_data="back_to_receivers_menu"
+        )
+    )
+    return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)

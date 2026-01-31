@@ -3,7 +3,7 @@ from aiogram.types import Message
 
 router = Router(name=__name__)
 
-# @router.message(F)
+# @router.message()
 # async def handle_any_message(message: Message):
 #
-#     await message.answer()
+#     await message.answer("asfasf")

@@ -1,12 +1,10 @@
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import DBHelper
+from bot.states.states import TemplateAddStates
 from database.models import Template
-from bot.filters import IsAdmin
 from bot.keyboards import get_admin_panel_menu_kb
 
 from bot.keyboards.admin_keyboards import AdminPanelTemplateOptions
@@ -20,12 +18,7 @@ MAX_TEMPLATE_NAME_LENGTH = 128
 MAX_TEMPLATE_DESCRIPTION_LENGTH = 3496
 
 
-class TemplateAddStates(StatesGroup):
-    template_name = State()
-    template_description = State()
-
-
-@router.message(F.text == AdminPanelTemplateOptions.add_template, IsAdmin())
+@router.message(F.text == AdminPanelTemplateOptions.add_template)
 async def handle_add_template(message: Message, state: FSMContext):
     await state.set_state(TemplateAddStates.template_name)
     await message.answer(f"Задайте шаблону название. Максимальная длина названия"
@@ -50,7 +43,6 @@ async def handle_wrong_template_name(message: Message):
 
 
 @router.message(F.text, TemplateAddStates.template_description)
-@DBHelper.get_session
 async def handle_template_description(message: Message, state: FSMContext, session: AsyncSession):
     await state.set_state(TemplateAddStates.template_description)
     description = message.text.strip()

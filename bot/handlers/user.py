@@ -1,6 +1,5 @@
-from aiogram import Router, F, html
+from aiogram import Router, F
 from aiogram.filters import CommandStart
-from aiogram.fsm.state import default_state
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings

@@ -1,13 +1,12 @@
 import sqlalchemy
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import default_state, StatesGroup, State
+from aiogram.fsm.state import default_state
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import DBHelper
+from bot.states.states import TemplateEditStates
 from database.models import Template, User
-from bot.filters import IsAdmin
 from bot.handlers.admin.template.add import MAX_TEMPLATE_NAME_LENGTH, MAX_TEMPLATE_DESCRIPTION_LENGTH
 from bot.keyboards import get_admin_panel_menu_kb
 from bot.keyboards.admin_keyboards import AdminPanelTemplateOptions, get_templates_inline_kb, TemplateEditData, \
@@ -18,12 +17,7 @@ from bot.utils.copy_message import copy_text_message
 
 router = Router()
 
-class TemplateEditStates(StatesGroup):
-    template_name = State()
-    template_description = State()
 
-
-@DBHelper.get_session
 async def get_templates_list(message: Message, template_creator_id: int, session: AsyncSession, page_number: int = 1):
     templates = await Template.paginate(session=session, page_number=page_number, order_by=Template.created_at,
                                         filters=[sqlalchemy.text(f"templates.creator_id={template_creator_id}"),
@@ -32,21 +26,19 @@ async def get_templates_list(message: Message, template_creator_id: int, session
                          reply_markup=get_templates_inline_kb(templates))
 
 
-
-@router.message(F.text == AdminPanelTemplateOptions.edit_template, IsAdmin())
+@router.message(F.text == AdminPanelTemplateOptions.edit_template)
 async def handle_edit_template_button(message: Message, session: AsyncSession, admin: User):
     try:
         templates = await Template.all_by_filter(session=session, order_by=Template.created_at, creator_id=admin.id)
         if len(templates) == 0:
             await message.answer("У вас нет ни одного созданного шаблона", reply_markup=get_admin_panel_menu_kb())
             return
-        await get_templates_list(message, message.from_user.id)
+        await get_templates_list(message, message.from_user.id, session)
     except Exception as e:
         await message.answer(f"Something went wrong. {e}", reply_markup=get_admin_panel_menu_kb())
 
 
 @router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.view))
-@DBHelper.get_session
 async def handle_template_edit(callback: CallbackQuery, session: AsyncSession, callback_data: TemplateEditData):
     try:
         template = await Template.get(session=session, primary_key=callback_data.id)
@@ -74,7 +66,6 @@ async def handle_template_edit_name(callback: CallbackQuery, state: FSMContext, 
     )
 
 @router.message(F.text, TemplateEditStates.template_name)
-@DBHelper.get_session
 async def handle_new_template_name(message: Message, state: FSMContext, session: AsyncSession):
     new_template_name = message.text.strip()
     if len(new_template_name) > MAX_TEMPLATE_NAME_LENGTH:
@@ -87,7 +78,7 @@ async def handle_new_template_name(message: Message, state: FSMContext, session:
         updated_template = await Template.update(session=session, primary_key=template_id, name=new_template_name)
         if not updated_template:
             await message.answer("Редактируемый шаблон не найден", reply_markup=ReplyKeyboardRemove())
-            await get_templates_list(message, message.from_user.id)
+            await get_templates_list(message, message.from_user.id, session)
             return
         await message.answer("Название шаблона успешно изменено")
         new_template_info = LEXICON["ADMIN"]["TEMPLATE"]['template_info'].format(
@@ -100,7 +91,7 @@ async def handle_new_template_name(message: Message, state: FSMContext, session:
                                                                       template_index=template_index))
     except Exception as e:
         await message.answer(f"Не удалось изменить название шаблона. {e}")
-        await get_templates_list(message, message.from_user.id)
+        await get_templates_list(message, message.from_user.id, session)
     finally:
         await state.clear()
 
@@ -111,7 +102,6 @@ async def handle_wrong_new_template_name(message: Message):
 
 
 @router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.delete), default_state)
-@DBHelper.get_session
 async def handle_template_delete(callback: CallbackQuery, session: AsyncSession, callback_data: TemplateEditData):
     await callback.answer()
     try:
@@ -123,7 +113,7 @@ async def handle_template_delete(callback: CallbackQuery, session: AsyncSession,
         await callback.message.delete()
     except Exception as e:
         await callback.message.answer(f"Не удалось удалить данный шаблон. {e}")
-        await get_templates_list(callback.message)
+        await get_templates_list(callback.message, callback_data.creator_id, session)
 
 
 @router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.edit_description), default_state)
@@ -138,7 +128,6 @@ async def handle_template_edit_name(callback: CallbackQuery, state: FSMContext, 
 
 
 @router.message(F.text, TemplateEditStates.template_description)
-@DBHelper.get_session
 async def handle_new_template_name(message: Message, state: FSMContext, session: AsyncSession):
     new_template_description = message.text.strip()
     if len(new_template_description) > MAX_TEMPLATE_DESCRIPTION_LENGTH:
@@ -165,7 +154,7 @@ async def handle_new_template_name(message: Message, state: FSMContext, session:
                                                                       template_index=template_index))
     except Exception as e:
         await message.answer(f"Не удалось изменить описание шаблона. {e}")
-        await get_templates_list(message, message.from_user.id)
+        await get_templates_list(message, message.from_user.id, session)
 
     finally:
         await state.clear()
@@ -177,6 +166,6 @@ async def handle_wrong_new_template_name(message: Message):
 
 
 @router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.to_templates_edit_list))
-async def handle_back_to_edit_templates_page(callback: CallbackQuery, callback_data: TemplateEditData):
+async def handle_back_to_edit_templates_page(callback: CallbackQuery, callback_data: TemplateEditData, session: AsyncSession):
     await callback.answer()
-    await get_templates_list(callback.message, callback_data.creator_id)
+    await get_templates_list(callback.message, callback_data.creator_id, session)
