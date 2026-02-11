@@ -4,13 +4,15 @@ from aiogram import Router, F
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
+from redis.asyncio import Redis
+from database.redis.redis_keys import admin_receivers_key
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.states.states import ReceiverMenuStates
 from bot.keyboards.admin_keyboards import AdminPanelReceiverOptions, get_admin_panel_receiver_menu_kb
 from bot.keyboards.common import get_cancel_reply_keyboard
 from bot.lexicon import LEXICON
-from database import redis
+from bot.utils.change_user_list import get_changed_user_list
 from database.models import User
 
 router = Router()
@@ -23,29 +25,17 @@ async def handle_admin_receiver_expansion_button(message: Message, state: FSMCon
                          reply_markup=get_cancel_reply_keyboard())
 
 @router.message(StateFilter(ReceiverMenuStates.add_receivers), F.text)
-async def handle_admin_receiver_expansion(message: Message, state: FSMContext, admin: User):
-    saved_users = (await redis.get(f"admin:{admin.id}:receivers"))
-    if not saved_users:
-        saved_users = set()
-    else:
-        saved_users = set(saved_users.split())
-
+async def handle_admin_receiver_expansion(message: Message, state: FSMContext, admin: User, redis: Redis):
+    saved_users = await redis.get(admin_receivers_key(admin.id))
     users_to_save = message.text.split()
-    new_saved_count = 0
-    for username in users_to_save:
-        username_length = len(username)
-        if 5 <= username_length <= 32 and username[0] == '@' and not username in saved_users:
-            new_saved_count += 1
-            saved_users.add(username)
-
-    result_message = LEXICON["ADMIN"]["RECEIVER"]["expand_result"].format(new_saved_count)
-    updated_users = " ".join(saved_users)
-    if new_saved_count == 0:
+    added_count, new_users = get_changed_user_list(saved_users, users_to_save)
+    result_message = LEXICON["ADMIN"]["RECEIVER"]["expand_result"].format(added_count)
+    if added_count == 0:
         result_message = ("Не было добавлено ни одного нового пользователя: \n "
                           "либо указанные пользователи уже были сохранены, либо"
                           " были написаны в неправильном формате")
     try:
-        await redis.set(f"admin:{admin.id}:receivers", updated_users)
+        await redis.set(admin_receivers_key(admin.id), new_users)
         await message.answer(text=result_message)
         await message.answer(text=LEXICON["ADMIN"]["RECEIVER"]["main"],
                              reply_markup=get_admin_panel_receiver_menu_kb())

@@ -34,12 +34,16 @@ async def handle_template_name(message: Message, state: FSMContext):
         return
     await state.update_data(name=name)
     await message.answer(f"Отправьте описание для шаблона. Максимальная длина"
-                         f"описания не должна превышать {MAX_TEMPLATE_DESCRIPTION_LENGTH} символов.", reply_markup=get_cancel_reply_keyboard())
+                         f"описания не должна превышать {MAX_TEMPLATE_DESCRIPTION_LENGTH} символов.",
+                         reply_markup=get_cancel_reply_keyboard())
 
 
 @router.message(TemplateAddStates.template_name)
 async def handle_wrong_template_name(message: Message):
-    await message.answer("Название шаблона должно быть в текстовом формате", reply_markup=get_cancel_reply_keyboard())
+    await message.answer("Название шаблона должно быть в текстовом формате",
+                         reply_markup=get_cancel_reply_keyboard())
+
+
 
 
 @router.message(F.text, TemplateAddStates.template_description)

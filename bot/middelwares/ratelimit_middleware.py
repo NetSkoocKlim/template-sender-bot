@@ -1,8 +1,9 @@
-from typing import Callable, Dict, Any, Awaitable
+from typing import Callable, Any, Awaitable
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, User
-from database.redis import redis
+
+from database.redis import get_redis
 
 
 class RateLimitMiddleware(BaseMiddleware):
@@ -20,5 +21,5 @@ class RateLimitMiddleware(BaseMiddleware):
 
     async def _allow(self, user_id: int) -> bool:
         key = f"ratelimit:user:{user_id}"
-        ok = await redis.set(key, 1, px=500, nx=True)
+        ok = await get_redis().set(key, 1, px=500, nx=True)
         return bool(ok)

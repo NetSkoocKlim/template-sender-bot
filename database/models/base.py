@@ -11,9 +11,9 @@ class Base(DeclarativeBase):
     pass
 
 
-
 class BaseModel(Base):
     __abstract__ = True
+    _must_be_active = False
 
     def to_dict(self) -> t.Dict:
         """
@@ -45,10 +45,8 @@ class BaseModel(Base):
             **kwargs,
     ) -> T:
         """Create a new record in the database."""
-        
         instance = cls(**kwargs)
         session.add(instance)
-        # await session.refresh(instance)
         return instance
 
     @classmethod
@@ -57,8 +55,10 @@ class BaseModel(Base):
             session: AsyncSession,
             primary_key: int,
     ) -> T:
-        """Get a record from the database by its primary key."""
-        
+        if cls._must_be_active:
+            return await session.scalar(select(cls).filter_by(
+                **{cls._get_primary_key(): primary_key,
+                   "is_active": True}))
         return await session.get(cls, primary_key)
 
     @classmethod
@@ -71,6 +71,8 @@ class BaseModel(Base):
         """Get a record from the database by its primary key."""
         
         statement = select(cls).filter_by(**{cls._get_primary_key(): primary_key})
+        if cls._must_be_active:
+            statement = select(cls).filter_by(**{"is_active": True})
         if join_tables is not None:
             statement = statement.options(selectinload(*join_tables))
         result = await session.execute(statement)
@@ -86,6 +88,8 @@ class BaseModel(Base):
         """Get a record by a key."""
         
         statement = select(cls).filter_by(**{cls._get_column(cls, key): value})
+        if cls._must_be_active:
+            statement = select(cls).filter_by(**{"is_active": True})
         result = await session.execute(statement)
         return result.scalars().first()
 
@@ -97,6 +101,8 @@ class BaseModel(Base):
     ) -> T | None:
         """Get a record from the database by a filters."""
         statement = select(cls).filter_by(**kwargs)
+        if cls._must_be_active:
+            statement = select(cls).filter_by(**{"is_active": True})
         result = await session.execute(statement)
         return result.scalars().first()
 
@@ -108,7 +114,7 @@ class BaseModel(Base):
             **kwargs,
     ) -> t.Union[T, None]:
         """Update a record in the database."""
-        instance = await session.get(cls, primary_key)
+        instance = await cls.get(session, primary_key)
         if instance:
             for key, value in kwargs.items():
                 setattr(instance, key, value)
@@ -229,6 +235,8 @@ class BaseModel(Base):
             statement = statement.join(*join_tables).options(selectinload(*join_tables))
         if order_by is not None:
             statement = statement.order_by(order_by)
+        if cls._must_be_active:
+            statement = statement.filter_by(is_active=True)
         result = await session.execute(statement)
         return result.scalars().all()
 
@@ -246,6 +254,8 @@ class BaseModel(Base):
             statement = statement.filter(*filters)
         if join_tables is not None:
             statement = statement.join(*join_tables)
+        if cls._must_be_active:
+            statement = statement.filter_by(is_active=True)
         query = await session.execute(statement)
         return (query.scalar() + page_size - 1) // page_size
 
@@ -258,12 +268,13 @@ class BaseModel(Base):
             order_by: t.Union[Column, None] = None,
     ) -> t.Sequence[T]:
         """Get all records from the database."""
-        
         statement = select(cls)
         if join_tables is not None:
             statement = statement.options(selectinload(*join_tables))
         if order_by:
             statement = statement.order_by(order_by)
+        if cls._must_be_active:
+            statement = statement.filter_by(is_active=True)
         result = await session.execute(statement)
         return result.scalars().all()
 
@@ -276,12 +287,12 @@ class BaseModel(Base):
             **kwargs,
 
     ) -> t.Sequence[T]:
-        """Get all records from the database by a filters."""
-        
         statement = select(cls).filter_by(**kwargs)
         if join_tables is not None:
             statement = statement.options(selectinload(*join_tables))
         if order_by:
             statement = statement.order_by(order_by)
+        if cls._must_be_active:
+            statement = statement.filter_by(is_active=True)
         result = await session.execute(statement)
         return result.scalars().all()

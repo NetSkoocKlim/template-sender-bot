@@ -2,12 +2,12 @@ from typing import Callable, Any, Awaitable
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, User
-from database.redis import redis
+
+from database.redis import get_redis
+from database.redis.redis_keys import user_requestlimit_key
 
 
 class RequestLimitMiddleware(BaseMiddleware):
-    def __init__(self):
-        self.request_user_key_template = "requestlimit:user:{}"
 
     async def __call__(self,
                  handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
@@ -23,14 +23,12 @@ class RequestLimitMiddleware(BaseMiddleware):
         try:
             return await handler(event, data)
         finally:
-            await redis.delete(self._get_user_key(user.id))
+            await get_redis().delete(user_requestlimit_key(user.id))
 
-    def _get_user_key(self, user_id: int) -> str:
-        return self.request_user_key_template.format(user_id)
-
-    async def _allow(self, user_id: int) -> bool:
+    @staticmethod
+    async def _allow(user_id: int) -> bool:
         try:
-            ok = await redis.set(self._get_user_key(user_id), 1, nx=True)
+            ok = await get_redis().set(user_requestlimit_key(user_id), 1, nx=True)
             return bool(ok)
         except Exception as e:
             return False

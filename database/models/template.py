@@ -1,9 +1,11 @@
 import datetime
 import typing
+import typing as t
 
-from sqlalchemy import Column, Text, DateTime, func, TIMESTAMP, ForeignKey, BigInteger
+from sqlalchemy import Column, Text, DateTime, func, TIMESTAMP, ForeignKey, BigInteger, Boolean, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from .base import BaseModel
+from .base import BaseModel, T
 from sqlalchemy.types import VARCHAR, TEXT, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,16 +15,32 @@ if typing.TYPE_CHECKING:
 
 class Template(BaseModel):
     __tablename__ = 'templates'
+    _must_be_active = True
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(VARCHAR(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     formated_description: Mapped[str] = mapped_column(Text, nullable=False)
     creator_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(TIMESTAMP,
                                                           server_default=func.now(),
                                                           )
 
-
     creator: Mapped["User"] = relationship(back_populates="templates")
 
+
+    @classmethod
+    async def update(
+            cls: t.Type["Template"],
+            session: AsyncSession,
+            primary_key: int,
+            **kwargs,
+    ) -> t.Any["Template", None]:
+        instance = await session.get(cls, primary_key)
+        if instance and instance.is_active:
+            for key, value in kwargs.items():
+                setattr(instance, key, value)
+            return instance
+        return None

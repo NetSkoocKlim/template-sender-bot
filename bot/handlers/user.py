@@ -12,7 +12,11 @@ router = Router(name=__name__)
 @router.message(CommandStart())
 @DBHelper.get_session
 async def proceed_start_command(message: Message, session: AsyncSession):
-    await User.create_or_update(session, id=message.from_user.id, username=message.from_user.username)
+    if message.from_user.username:
+        username = "@" + message.from_user.username
+    else:
+        username = None
+    await User.create_or_update(session, id=message.from_user.id, username=username)
     await message.answer(text='Добро пожаловать!')
 
 
