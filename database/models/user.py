@@ -13,7 +13,6 @@ if typing.TYPE_CHECKING:
 class User(BaseModel):
     __tablename__ = 'users'
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     username: Mapped[str] = mapped_column(VARCHAR(255), unique=True)
 
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
