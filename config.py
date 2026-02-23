@@ -30,6 +30,12 @@ class BotConfig(BaseModel):
     TOKEN: str = ""
     SUPERADMIN_ID: str = ""
 
+
+class StorageConfig(BaseModel):
+    key_id: str = ""
+    secret: str = ""
+    bucket_name: str = ""
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -42,6 +48,7 @@ class Settings(BaseSettings):
     db: DBConfig = Field(default_factory=DBConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     secret: str = Field(default="AiVK0AT")
+    storage: StorageConfig = Field(default_factory=StorageConfig)
 
 
 settings = Settings()

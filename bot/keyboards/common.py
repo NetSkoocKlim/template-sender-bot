@@ -1,9 +1,8 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 
-
-def get_cancel_reply_keyboard():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="Отмена")]
-    ], resize_keyboard=True,
-    one_time_keyboard=True)
+def get_cancel_button():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Отмена",
+                              callback_data="cancel_button")],
+    ], resize_keyboard=True)

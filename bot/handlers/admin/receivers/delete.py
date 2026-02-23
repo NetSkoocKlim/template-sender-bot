@@ -1,14 +1,11 @@
-import asyncio
-
 from aiogram import Router, F
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
-from sqlalchemy.ext.asyncio import AsyncSession
+from aiogram.types import Message, CallbackQuery
 
 from bot.states.states import ReceiverMenuStates
 from bot.keyboards.admin_keyboards import AdminPanelReceiverOptions, get_admin_panel_receiver_menu_kb
-from bot.keyboards.common import get_cancel_reply_keyboard
+from bot.keyboards.common import get_cancel_button
 from bot.lexicon import LEXICON
 from bot.utils.change_user_list import get_changed_user_list
 from redis.asyncio import Redis
@@ -17,12 +14,15 @@ from database.models import User
 
 router = Router()
 
-
-@router.message(F.text == AdminPanelReceiverOptions.delete)
-async def handle_admin_receiver_expansion_button(message: Message, state: FSMContext):
+@router.callback_query(F.data == AdminPanelReceiverOptions.delete)
+async def handle_admin_receiver_expansion_button(callback: CallbackQuery, state: FSMContext):
     await state.set_state(ReceiverMenuStates.delete_receivers)
-    await message.answer(text=LEXICON["ADMIN"]["RECEIVER"]["delete_list"],
-                         reply_markup=get_cancel_reply_keyboard())
+
+    await state.update_data(callback_id=callback.id,
+                            callback_message_id=callback.message.message_id)
+
+    await callback.message.edit_text(text=LEXICON["ADMIN"]["RECEIVER"]["delete_list"],
+                         reply_markup=get_cancel_button())
 
 
 @router.message(StateFilter(ReceiverMenuStates.delete_receivers), F.text)
@@ -32,16 +32,27 @@ async def handle_admin_receiver_expansion(message: Message, state: FSMContext, a
     users_to_delete = message.text.split()
     deleted_count, new_users = get_changed_user_list(saved_users, users_to_delete, False)
     result_message = LEXICON["ADMIN"]["RECEIVER"]["delete_result"].format(deleted_count)
+
+    callback_data = await state.get_data()
+    callback_id, callback_message_id = callback_data.get('callback_id'), callback_data.get('callback_message_id')
+
     if deleted_count == 0:
-        result_message = ("Ни один из указанных пользователей не был удалён: \n "
-                          "либо указанные юзернеймы не были в списке, либо"
-                          " они были написаны в неправильном формате")
+        result_message = "Ни один из указанных пользователей не был удалён"
     try:
         await redis.set(admin_receivers_key(admin.id), new_users)
-        await message.answer(text=result_message)
-        await message.answer(text=LEXICON["ADMIN"]["RECEIVER"]["main"],
-                             reply_markup=get_admin_panel_receiver_menu_kb())
+        await message.bot.edit_message_text(
+            text=LEXICON["ADMIN"]["RECEIVER"]["main"],
+            chat_id=message.chat.id,
+            message_id=callback_message_id,
+            reply_markup=get_admin_panel_receiver_menu_kb()
+        )
+        await message.delete()
+        await message.bot.answer_callback_query(
+            callback_id,
+            text=result_message
+        )
     except Exception as e:
-        await message.answer(text=str(e))
+        print(str(e))
     finally:
         await state.clear()
+

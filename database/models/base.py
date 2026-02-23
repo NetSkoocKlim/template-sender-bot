@@ -1,11 +1,24 @@
+import datetime
+import typing as t
+from dataclasses import dataclass
+
+from sqlalchemy import Column, select, func, BigInteger, desc, TIMESTAMP
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload, DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Column, select, func, Integer, BigInteger
-import typing as t
-
 
 T = t.TypeVar("T", bound="BaseModel")
 
+@dataclass
+class Anchor:
+    page: int
+    value: int
+
+    def __init__(self, page: int = 1, value: int = 0):
+        self.page = page
+        self.value = value
+
+    def __str__(self):
+        return f"Anchor(page={self.page}, value={self.value})"
 
 class Base(DeclarativeBase):
     pass
@@ -15,7 +28,10 @@ class BaseModel(Base):
     __abstract__ = True
     _must_be_active = False
 
+    _PAGE_SIZE = 2
+
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()")
 
     def to_dict(self) -> t.Dict:
         """
@@ -23,6 +39,10 @@ class BaseModel(Base):
         """
         return {f"{self.__tablename__}_{col.name}": getattr(self, col.name) for col in
                 t.cast(t.List[Column], t.cast(object, self.__table__.columns))}
+
+    @classmethod
+    def get_page_size(cls) -> int:
+        return cls._PAGE_SIZE
 
     @staticmethod
     def _get_column(
@@ -54,7 +74,7 @@ class BaseModel(Base):
             filter_by: dict[str, t.Any] = None,
             order_by: t.Union[Column, None] = None,
     ):
-        if select_value:
+        if select_value is not None:
             statement = select(select_value)
         else:
             statement = select(cls)
@@ -112,8 +132,7 @@ class BaseModel(Base):
     ) -> T:
         """Get a record from the database by its primary key."""
         filter_by = {cls._get_primary_key(): primary_key}
-        statement = cls._get_select_statement(filter_by=filter_by,
-                                              join_tables=join_tables)
+        statement = cls._get_select_statement(join_tables=join_tables, filter_by=filter_by)
         result = await session.execute(statement)
         return result.scalars().first()
 
@@ -138,6 +157,17 @@ class BaseModel(Base):
     ) -> T | None:
         """Get a record from the database by a filters."""
         statement = cls._get_select_statement(filter_by=kwargs)
+        result = await session.execute(statement)
+        return result.scalars().first()
+
+    @classmethod
+    async def get_newest(
+            cls,
+            session: AsyncSession,
+            filter_by: dict[str, t.Any]
+    ):
+        statement = cls._get_select_statement(filter_by=filter_by, order_by=cls.created_at.desc())
+        statement = statement.limit(1)
         result = await session.execute(statement)
         return result.scalars().first()
 
@@ -257,18 +287,14 @@ class BaseModel(Base):
             cls: t.Type[T],
             session: AsyncSession,
             page_number: int,
-            page_size: int = 7,
             join_tables: t.Union[t.Any, t.List[t.Any]] = None,
             filters: t.Sequence[t.Any] = None,
             order_by: t.Union[Column, None] = None,
     ) -> t.Sequence[T]:
         """Get paginated records from the database by a filters."""
-        statement = cls._get_select_statement(
-            join_tables=join_tables,
-            filters=filters,
-            order_by=order_by,
-        )
-        statement = statement.limit(page_size).offset((page_number - 1) * page_size)
+        statement = cls._get_select_statement(join_tables=join_tables, filters=filters, order_by=order_by or cls.id)
+        statement = (statement.limit(cls._PAGE_SIZE)
+                     .offset((page_number - 1) * cls._PAGE_SIZE))
         result = await session.execute(statement)
         return result.scalars().all()
 
@@ -276,54 +302,48 @@ class BaseModel(Base):
     async def paginate_fast(
             cls,
             session: AsyncSession,
-            page_size: int = 7,
-            anchor: int | None = None,
+            page: int,
+            anchor: Anchor | None = None,
             join_tables: t.Union[t.Any, t.List[t.Any]] = None,
             filters: t.Sequence[t.Any] = None,
-            order_by: t.Union[Column, None] = None,
-    ) -> tuple[t.Sequence[T], int]:
-        if not anchor:
-            result = await cls.paginate(
-                session,
-                1,
-                page_size,
-                join_tables,
-                filters,
-                order_by
-            )
-        else:
-            statement = cls._get_select_statement(
-                join_tables=join_tables,
-                filters=filters,
-                order_by=order_by,
-            )
-            statement = statement.where(
-                cls.id > anchor,
-            ).order_by(cls.id).limit(page_size)
+            direction: int = 1,
+            is_deletion: bool = False
+    ) -> tuple[t.Sequence[T], Anchor, Anchor]:
 
-            result = (await session.execute(statement)).scalars().all()
+        statement = cls._get_select_statement(join_tables=join_tables, filters=filters)
+        if direction == 1:
+            statement = statement.where(
+                cls.id > anchor.value,
+            ).order_by(cls.id).limit(cls._PAGE_SIZE)
+        else:
+            statement = statement.where(
+                cls.id < anchor.value if is_deletion else cls.id <= anchor.value,
+            ).order_by(desc(cls.id)).limit(cls._PAGE_SIZE)
+
+        result = (await session.execute(statement)).scalars().all()
+        if direction == 0:
+            result = list(reversed(result))
         if result:
-            return result, result[-1].id
-        return result, 0
+            backward_anchor = Anchor(page=page-1, value=result[0].id)
+            forward_anchor = Anchor(page=page+1, value=result[-1].id)
+
+            return result, backward_anchor, forward_anchor
+
+        return [], Anchor(page=page, value=0), Anchor(page=page, value=0)
 
 
     @classmethod
     async def total_pages(
             cls: t.Type[T],
             session: AsyncSession,
-            page_size: int = 7,
             join_tables: t.Union[t.Any, t.List[t.Any]] = None,
             filters: t.Sequence[t.Any] = None,
     ) -> int:
-        count_col = func.count().label("total")
-        statement = cls._get_select_statement(
-            count_col,
-            join_tables=join_tables,
-            filters=filters,
-        )
+        count_col = func.count(cls.id).label("total")
+        statement = cls._get_select_statement(count_col, join_tables=join_tables, filters=filters)
         query = await session.execute(statement)
         total = query.scalar() or 0
-        return (total + page_size - 1) // page_size
+        return (total + cls._PAGE_SIZE - 1) // cls._PAGE_SIZE
 
 
     @classmethod
@@ -334,10 +354,7 @@ class BaseModel(Base):
             order_by: t.Union[Column, None] = None,
     ) -> t.Sequence[T]:
         """Get all records from the database."""
-        statement = cls._get_select_statement(
-            join_tables=join_tables,
-            order_by=order_by,
-        )
+        statement = cls._get_select_statement(join_tables=join_tables, order_by=order_by)
         result = await session.execute(statement)
         return result.scalars().all()
 
@@ -349,10 +366,6 @@ class BaseModel(Base):
             order_by: t.Union[Column, None] = None,
             **kwargs,
     ) -> t.Sequence[T]:
-        statement = cls._get_select_statement(
-            join_tables=join_tables,
-            filter_by=kwargs,
-            order_by=order_by,
-        )
+        statement = cls._get_select_statement(join_tables=join_tables, filter_by=kwargs, order_by=order_by)
         result = await session.execute(statement)
         return result.scalars().all()

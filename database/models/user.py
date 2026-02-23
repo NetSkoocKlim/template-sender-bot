@@ -1,7 +1,6 @@
-import asyncio
 import typing
 
-from sqlalchemy import VARCHAR, BigInteger, text, bindparam, ARRAY, TEXT
+from sqlalchemy import VARCHAR, text, bindparam, ARRAY, TEXT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 

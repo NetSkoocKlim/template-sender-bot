@@ -23,9 +23,6 @@ class Template(BaseModel):
     creator_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(TIMESTAMP,
-                                                          server_default=func.now(),
-                                                          )
 
     creator: Mapped["User"] = relationship(back_populates="templates")
 

@@ -1,0 +1,1 @@
+from .create_mailing_result_csv import create_mailing_result_csv
