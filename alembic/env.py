@@ -1,9 +1,13 @@
 import asyncio
+import logging
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
 
 from alembic import context
 
@@ -13,8 +17,11 @@ config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
+if config.config_file_name is not None and config.attributes.get('configure_logger', True):
     fileConfig(config.config_file_name)
+
+from config import settings
+config.set_main_option("sqlalchemy.url", settings.db.URL)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -25,8 +32,7 @@ target_metadata = Base.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
-from config import settings
-config.set_main_option("sqlalchemy.url", settings.db.URL)
+
 
 
 def run_migrations_offline() -> None:
@@ -46,7 +52,7 @@ def run_migrations_offline() -> None:
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
+        dialect_opts={"paramstyle": "named"}
     )
 
     with context.begin_transaction():
@@ -85,6 +91,8 @@ def run_migrations_online() -> None:
 
 
 if context.is_offline_mode():
+    logging.info("Running migrations on offline mode")
     run_migrations_offline()
 else:
+    logging.info("Running migrations on online mode")
     run_migrations_online()

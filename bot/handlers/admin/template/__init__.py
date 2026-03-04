@@ -34,8 +34,8 @@ async def handle_admin_template_command(callback: CallbackQuery):
 @router.callback_query(F.data == "cancel_button", StateFilter(TemplateAddStates))
 async def handle_cancel_add_template(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.answer()
-    await callback.message.edit_text("Создание шаблона отменено", reply_markup=get_admin_panel_template_menu_kb())
+    await callback.answer("Создание шаблона отменено")
+    await callback.message.edit_text(LEXICON["ADMIN"]["TEMPLATE"]["main"], reply_markup=get_admin_panel_template_menu_kb())
 
 
 @router.callback_query(StateFilter(
@@ -61,6 +61,6 @@ async def handle_cancel_edit_template_command(callback: CallbackQuery, state: FS
     )
     await callback.message.answer(
         text=template_info,
-        reply_markup=get_template_edit_inline_kb(template, template_is_chosen, template_index),
+        reply_markup=get_template_edit_inline_kb(template, template_index),
     )
 

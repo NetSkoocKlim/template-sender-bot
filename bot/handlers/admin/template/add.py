@@ -21,63 +21,129 @@ MAX_TEMPLATE_DESCRIPTION_LENGTH = 3496
 @router.callback_query(F.data == AdminPanelTemplateOptions.add_template)
 async def handle_add_template(callback: CallbackQuery, state: FSMContext):
     await state.set_state(TemplateAddStates.template_name)
+    await state.set_data({"message_id": callback.message.message_id})
+    await callback.answer()
     await callback.message.edit_text(f"Задайте шаблону название. Максимальная длина названия:"
                          f" {MAX_TEMPLATE_NAME_LENGTH} символа.\n"
-                         f"Также название должно состоять только из букв и цифр", reply_markup=get_cancel_button())
+                         f"Название должно состоять только из букв и цифр", reply_markup=get_cancel_button())
 
 
 @router.message(F.text, TemplateAddStates.template_name)
 async def handle_template_name(message: Message, state: FSMContext):
     name = message.text.strip()
-    if len(name) > MAX_TEMPLATE_NAME_LENGTH:
-        await message.answer(f"Слишком длинное название для шаблона. Придумайте другое", reply_markup=get_cancel_button())
-        return
-    def check_symbols_in_name(name_to_check: str) -> bool:
-        for sym in name_to_check:
+    state_data = await state.get_data()
+    message_id = state_data.get("message_id")
+    def check_symbols_in_name() -> bool:
+        for sym in name:
             if not sym.isdigit() and not sym.isalpha():
                 return False
         return True
-    if not check_symbols_in_name(name):
-        await message.answer("В названии содержатся недопустимые символы", reply_markup=get_cancel_button())
-        return
-    await state.set_state(TemplateAddStates.template_description)
-    await state.update_data(name=name)
-    await message.answer(f"Отправьте описание для шаблона. Максимальная длина"
-                         f"описания не должна превышать {MAX_TEMPLATE_DESCRIPTION_LENGTH} символов.",
-                         reply_markup=get_cancel_button())
+    try:
+        await message.bot.delete_message(
+            chat_id=message.from_user.id,
+            message_id=message_id
+        )
+    except Exception as e:
+        pass
+
+    if len(name) > MAX_TEMPLATE_NAME_LENGTH:
+        result_text = f"Слишком длинное название для шаблона. Придумайте другое"
+    elif not check_symbols_in_name():
+        result_text = "В названии содержатся недопустимые символы"
+    else:
+        result_text = (f"Введённое название: {name}\n\nТеперь отправьте описание для шаблона. Максимальная длина"
+                       f" описания не должна превышать {MAX_TEMPLATE_DESCRIPTION_LENGTH} символов.")
+        await state.set_state(TemplateAddStates.template_description)
+    sended_message: Message =  await message.bot.send_message(
+        text=result_text,
+        chat_id=message.from_user.id,
+        reply_markup=get_cancel_button()
+    )
+    await state.update_data(name=name, message_id=sended_message.message_id)
+
 
 
 @router.message(TemplateAddStates.template_name)
-async def handle_wrong_template_name(message: Message):
-    await message.answer("Название шаблона должно быть в текстовом формате",
-                         reply_markup=get_cancel_button())
-
+async def handle_wrong_template_name(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+    message_id = state_data.get("message_id")
+    await message.bot.delete_message(
+        chat_id=message.from_user.id,
+        message_id=message_id
+    )
+    sended_message = await message.bot.send_message(
+        text="Название шаблона должно быть в текстовом формате",
+        chat_id=message.from_user.id,
+        reply_markup=get_cancel_button()
+    )
+    await state.update_data(message_id=sended_message.message_id)
 
 
 
 @router.message(F.text, TemplateAddStates.template_description)
 async def handle_template_description(message: Message, state: FSMContext, session: AsyncSession):
     description = message.text.strip()
+    state_data = await state.get_data()
+    message_id = state_data.get("message_id")
     if len(description) > MAX_TEMPLATE_DESCRIPTION_LENGTH:
-        await message.answer(f"Длина описания не должна превышать максимально допустимое значение.",
-                             reply_markup=get_cancel_button())
+        await message.bot.delete_message(
+            chat_id=message.from_user.id,
+            message_id=message_id
+        )
+        sended_message = await message.bot.send_message(
+            text=f"Длина описания не должна превышать максимально допустимое значение.",
+            chat_id=message.from_user.id,
+            reply_markup=get_cancel_button()
+        )
+        await state.update_data(message_id=sended_message.message_id)
         return
-    name = (await state.get_data()).get('name')
+    name = state_data.get('name')
     try:
         await Template.create(session=session, name=name, description=description,
                               formated_description=copy_text_message(description, message.entities),
                               creator_id=message.from_user.id)
-        await message.answer(text="Шаблон успешно создан")
-        await message.answer(text=LEXICON["ADMIN"]["main"], reply_markup=get_admin_panel_menu_kb())
+        await message.answer(
+            text="Шаблон успешно создан",
+        )
+        await message.bot.delete_message(
+            chat_id=message.from_user.id,
+            message_id=message_id
+        )
+        await message.bot.send_message(
+            text=LEXICON["ADMIN"]["main"],
+            chat_id=message.from_user.id,
+            reply_markup=get_admin_panel_menu_kb()
+        )
     except Exception as e:
-        await message.answer(f"При создании шаблона что-то пошло не так. {e}")
-        await message.answer(text=LEXICON["ADMIN"]["main"], reply_markup=get_admin_panel_menu_kb())
+        await message.answer(
+            text=f"При создании шаблона что-то пошло не так. {e}",
+        )
+        await message.bot.delete_message(
+            chat_id=message.from_user.id,
+            message_id=message_id
+        )
+        await message.bot.send_message(
+            text=LEXICON["ADMIN"]["main"],
+            chat_id=message.from_user.id,
+            reply_markup=get_admin_panel_menu_kb()
+        )
     finally:
         await state.clear()
 
 
 @router.message(TemplateAddStates.template_description)
-async def handle_wrong_template_description(message: Message):
-    await message.answer("Описание должно быть в текстовом формате", reply_markup=get_cancel_button())
+async def handle_wrong_template_description(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+    message_id = state_data.get("message_id")
+    await message.bot.delete_message(
+        chat_id=message.from_user.id,
+        message_id=message_id
+    )
+    sended_message = await message.bot.send_message(
+        text="Название шаблона должно быть в текстовом формате",
+        chat_id=message.from_user.id,
+        reply_markup=get_cancel_button()
+    )
+    await state.update_data(message_id=sended_message.message_id)
 
 

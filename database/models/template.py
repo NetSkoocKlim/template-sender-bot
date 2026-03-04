@@ -15,7 +15,7 @@ if typing.TYPE_CHECKING:
 
 class Template(BaseModel):
     __tablename__ = 'templates'
-    _must_be_active = True
+    # _must_be_active = True
 
     name: Mapped[str] = mapped_column(VARCHAR(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -23,6 +23,7 @@ class Template(BaseModel):
     creator_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_chosen_for_mailing: Mapped[bool] = mapped_column(Boolean, nullable=True, default=False)
 
     creator: Mapped["User"] = relationship(back_populates="templates")
 

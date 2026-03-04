@@ -3,10 +3,11 @@ from typing import Sequence
 
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from database import TemplatePaginator
 from database.models import Template, Mailing
-from database.models.base import Anchor
+
 
 
 class AdminPanelOptions(StrEnum):
@@ -55,21 +56,21 @@ class TemplateEditAction(StrEnum):
     view = auto()
     choose = auto()
     edit_name = auto()
-    edit_description = auto()
+    edit_desc = auto()
     delete = auto()
-    back_to_list = auto()
+    bckto_lst = auto()
 
 
 action_to_text = {
     TemplateEditAction.edit_name: "Изменить название",
-    TemplateEditAction.edit_description: "Изменить описание",
+    TemplateEditAction.edit_desc: "Изменить описание",
     TemplateEditAction.delete: "Удалить шаблон",
-    TemplateEditAction.back_to_list: "Назад",
+    TemplateEditAction.bckto_lst: "Назад",
     TemplateEditAction.choose: "Выбрать для рассылки",
 }
 
 
-class TemplateEditData(CallbackData, prefix="edit_template"):
+class TemplateEditData(CallbackData, prefix="edit_tmplt"):
     action: TemplateEditAction
     id: int
     index: int | None = None
@@ -80,32 +81,28 @@ class TemplateEditData(CallbackData, prefix="edit_template"):
 
 
 
-class PaginateButtonData(CallbackData, prefix="paginate"):
-    model: str
-
-    anchor_page: int
-    anchor_value: int
-    page_count: int
-    direction: int = 1
+class PaginateButtonData(CallbackData, prefix="pgnt"):
+    anchor: str
+    forward: bool = True
 
 
 def get_templates_inline_kb(templates: Sequence[Template],
-                            forward_anchor: Anchor,
-                            backward_anchor: Anchor,
+                            forward_anchor: str | None,
+                            backward_anchor: str | None,
                             page_count: int,
-                            page: int,
-                            chosen_template_id: int | None = None,
+                            page: int
                             ) -> InlineKeyboardMarkup:
+
+
     builder = InlineKeyboardBuilder()
-    page_size = Template.get_page_size()
+    page_size = TemplatePaginator.PAGE_SIZE
     for index, template in enumerate(templates, start=1):
         button_name = f"Шаблон {(page - 1) * page_size + index}"
         template_is_chosen = False
-        if chosen_template_id is not None and int(chosen_template_id) == template.id:
+        if template.is_chosen_for_mailing:
             button_name = " (Выбран ✅)  " + button_name
             template_is_chosen = True
         button_name = button_name + f": {template.name}"
-
         builder.button(
             text=button_name,
             callback_data=TemplateEditData(
@@ -118,7 +115,7 @@ def get_templates_inline_kb(templates: Sequence[Template],
             ).pack(),
         )
 
-    if backward_anchor.page == 0:
+    if not backward_anchor:
         backward_button = InlineKeyboardButton(
             text="#",
             callback_data="empty_pagination"
@@ -127,15 +124,12 @@ def get_templates_inline_kb(templates: Sequence[Template],
         backward_button = InlineKeyboardButton(
             text="<",
             callback_data=PaginateButtonData(
-                model="Template",
-                anchor_page=backward_anchor.page,
-                anchor_value=backward_anchor.value,
-                page_count=page_count,
-                direction=0
+                anchor=backward_anchor,
+                forward=False
             ).pack(),
         )
 
-    if forward_anchor.page == page_count + 1:
+    if not forward_anchor:
         forward_button = InlineKeyboardButton(
             text="#",
             callback_data="empty_pagination"
@@ -144,10 +138,8 @@ def get_templates_inline_kb(templates: Sequence[Template],
         forward_button = InlineKeyboardButton(
             text=">",
             callback_data=PaginateButtonData(
-                model="Template",
-                anchor_page=forward_anchor.page,
-                anchor_value=forward_anchor.value,
-                page_count=page_count
+                anchor=forward_anchor,
+                forward=True
             ).pack()
         )
 
@@ -170,7 +162,7 @@ def get_templates_inline_kb(templates: Sequence[Template],
     return builder.as_markup(resize_keyboard=True)
 
 
-def get_template_edit_inline_kb(template: Template, template_is_chosen: bool,
+def get_template_edit_inline_kb(template: Template,
                                 template_index: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for action in TemplateEditAction:
@@ -182,7 +174,7 @@ def get_template_edit_inline_kb(template: Template, template_is_chosen: bool,
                     id=template.id,
                     index=template_index,
                     creator_id=template.creator_id,
-                    is_chosen=template_is_chosen,
+                    is_chosen=template.is_chosen_for_mailing,
                     name=template.name
                 ).pack(),
             )
@@ -285,70 +277,70 @@ def get_admin_panel_statistic_kb(last_mailing_key):
 class MailingViewData(CallbackData, prefix="view_data"):
      id: int
 
-async def get_mailings_inline_kb(
-        mailings: Sequence[Mailing],
-        forward_anchor: Anchor,
-        backward_anchor: Anchor,
-        page: int = 1,
-        page_count: int = 1,
-):
-    builder = InlineKeyboardBuilder()
-    for mailing in mailings:
-        button_name = f"Рассылка от {mailing.created_at.replace(
-            microsecond=0,
-            second=0,
-        )}"
-        builder.button(
-            text=button_name,
-            callback_data=MailingViewData(
-                id=mailing.id,
-            ).pack(),
-        )
-
-    if forward_anchor.page == page_count + 1:
-        forward_button = InlineKeyboardButton(
-            text="#",
-            callback_data="empty_pagination"
-        )
-    else:
-        forward_button = InlineKeyboardButton(
-            text=">",
-            callback_data=PaginateButtonData(
-                model="Mailing",
-                anchor_page=forward_anchor.page,
-                anchor_value=forward_anchor.value,
-                page_count=page_count
-            ).pack()
-        )
-
-    if backward_anchor.page == 0:
-        backward_button = InlineKeyboardButton(
-            text="#",
-            callback_data="empty_pagination"
-        )
-    else:
-        backward_button = InlineKeyboardButton(
-            text="<",
-            callback_data=PaginateButtonData(
-                model="Mailing",
-                anchor_page=backward_anchor.page,
-                anchor_value=backward_anchor.value,
-                page_count=page_count,
-                direction=0
-            ).pack(),
-        )
-    page_button = InlineKeyboardButton(
-        text=f"{page}/{page_count}",
-        callback_data="empty_pagination"
-    )
-
-    builder.row(backward_button, page_button, forward_button)
-
-    builder.row(
-        InlineKeyboardButton(
-            text="Назад",
-            callback_data="back_to_statistic_menu",
-        )
-    )
-
-    return builder.as_markup(resize_keyboard=True)
+# async def get_mailings_inline_kb(
+#         mailings: Sequence[Mailing],
+#         forward_anchor: Anchor,
+#         backward_anchor: Anchor,
+#         page: int = 1,
+#         page_count: int = 1,
+# ):
+#     builder = InlineKeyboardBuilder()
+#     for mailing in mailings:
+#         button_name = f"Рассылка от {mailing.created_at.replace(
+#             microsecond=0,
+#             second=0,
+#         )}"
+#         builder.button(
+#             text=button_name,
+#             callback_data=MailingViewData(
+#                 id=mailing.id,
+#             ).pack(),
+#         )
+#
+#     if forward_anchor.page == page_count + 1:
+#         forward_button = InlineKeyboardButton(
+#             text="#",
+#             callback_data="empty_pagination"
+#         )
+#     else:
+#         forward_button = InlineKeyboardButton(
+#             text=">",
+#             callback_data=PaginateButtonData(
+#                 model="Mailing",
+#                 anchor_page=forward_anchor.page,
+#                 anchor_value=forward_anchor.value,
+#                 page_count=page_count
+#             ).pack()
+#         )
+#
+#     if backward_anchor.page == 0:
+#         backward_button = InlineKeyboardButton(
+#             text="#",
+#             callback_data="empty_pagination"
+#         )
+#     else:
+#         backward_button = InlineKeyboardButton(
+#             text="<",
+#             callback_data=PaginateButtonData(
+#                 model="Mailing",
+#                 anchor_page=backward_anchor.page,
+#                 anchor_value=backward_anchor.value,
+#                 page_count=page_count,
+#                 direction=0
+#             ).pack(),
+#         )
+#     page_button = InlineKeyboardButton(
+#         text=f"{page}/{page_count}",
+#         callback_data="empty_pagination"
+#     )
+#
+#     builder.row(backward_button, page_button, forward_button)
+#
+#     builder.row(
+#         InlineKeyboardButton(
+#             text="Назад",
+#             callback_data="back_to_statistic_menu",
+#         )
+#     )
+#
+#     return builder.as_markup(resize_keyboard=True)

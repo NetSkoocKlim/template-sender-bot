@@ -4,7 +4,7 @@ import re
 import urllib.parse
 from io import BytesIO
 from email.message import EmailMessage
-# from cgi import parse_header
+
 import aiohttp
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InputFile, BufferedInputFile
@@ -14,6 +14,7 @@ from bot.keyboards import AdminPanelOptions
 from bot.keyboards.admin_keyboards import get_admin_panel_statistic_kb, DownloadMailingData, AdminPanelStatisticOptions
 from bot.lexicon import LEXICON
 from database.models import User, Mailing
+from database.paginator.paginator import MailingPaginator
 
 router = Router()
 
@@ -30,18 +31,32 @@ async def statistic_menu_handler(callback: CallbackQuery,
     if not last_mailing:
         await callback.answer("Вы ещё не совершали рассылку")
         return
+    stmt = Mailing.get_select_statement(
+        filter_by={"admin_id": admin.id}
+    )
+    mailing_count = await MailingPaginator.count_total(
+        session,
+        base_stmt=stmt
+    )
+    last_mailing_date = last_mailing.created_at.date()
+
+    def create_short_report():
+        mailing_unresolved_count = last_mailing.unresolved_count
+        mailing_failed_count = last_mailing.delivery_failed_count
+        mailing_success_count = last_mailing.total_requested - mailing_unresolved_count - mailing_failed_count
+
+        return ("Результат последней рассылки:\n"
+                f"Успешно отправлено: {mailing_success_count}\n"
+                f"Юзер не найден: {mailing_unresolved_count}\n"
+                f"Не удалось отправить: {mailing_failed_count}\n")
 
     await callback.answer()
     await callback.message.edit_text(
-        text=LEXICON["ADMIN"]["STATISTIC"]["main"],
+        text=LEXICON["ADMIN"]["STATISTIC"]["main"].format(mailing_count, last_mailing_date, create_short_report()),
         reply_markup=get_admin_panel_statistic_kb(last_mailing.csv_result_key)
     )
 
 def parse_content_disposition(cd_header: str) -> str | None:
-    """
-    Возвращает безопасное имя файла из заголовка Content-Disposition или None.
-    Поддерживает filename* (RFC5987) и обычный filename, а также RFC2047.
-    """
     if not cd_header:
         return None
     m = re.search(r'filename\s*=\s*(?P<val>(".*?"|\'.*?\'|[^;]+))', cd_header, flags=re.IGNORECASE)
@@ -72,16 +87,21 @@ async def handle_download_last_mailing(
     await callback.answer()
 
 
-@router.callback_query(AdminPanelStatisticOptions.view)
-async def handle_view_statistic_button(
+@router.callback_query(F.data == AdminPanelStatisticOptions.view)
+async def handle_view_all_mailings_button(
         callback: CallbackQuery,
         admin: User,
         session: AsyncSession,
 ):
-
-    mailings, back_anchor, forward_anchor = await Mailing.paginate_fast(
-        session,
-        page=1
+    stmt = Mailing.get_select_statement(
+        filter_by={
+            "admin_id": admin.id,
+        }
     )
+    mailings, backward_anchor, forward_anchor, current_page, total_pages = await MailingPaginator.paginate_page(
+        session=session, base_stmt=stmt
+    )
+
+
 
 
