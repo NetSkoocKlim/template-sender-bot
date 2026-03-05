@@ -3,14 +3,18 @@ import math
 import sqlalchemy
 from aiogram import Router, F, html
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import default_state
 from aiogram.types import Message, CallbackQuery
 from redis import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.handlers.admin.template.add import MAX_TEMPLATE_NAME_LENGTH
 from bot.keyboards.admin_keyboards import AdminPanelTemplateOptions, get_templates_inline_kb, PaginateButtonData, \
     TemplateEditData, TemplateEditAction, get_template_edit_inline_kb
+from bot.keyboards.common import get_cancel_button
 from bot.lexicon import LEXICON
+from bot.states.states import TemplateEditStates
 from database.models import Template, User
 from database import TemplatePaginator
 from database.paginator.anchor_store import store_payload_with_token, retrieve_payload_by_token, \
@@ -122,52 +126,62 @@ async def handle_template_edit(callback: CallbackQuery, session: AsyncSession, c
     except Exception as e:
         await callback.answer(f"Failed to load template data. {e}", show_alert=True)
 
-# @router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.edit_name), default_state)
-# async def handle_template_edit_name(callback: CallbackQuery, state: FSMContext, callback_data: TemplateEditData):
-#     await callback.answer()
-#     await state.update_data(template_id=callback_data.id, template_index=callback_data.index,
-#                             template_is_chosen=callback_data.is_chosen,)
-#     await state.set_state(TemplateEditStates.template_name)
-#     await callback.message.edit_text(
-#         "Введите новое название для шаблона",
-#         reply_markup=get_cancel_button()
-#     )
+@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.name), default_state)
+async def handle_template_edit_name(callback: CallbackQuery, state: FSMContext, callback_data: TemplateEditData):
+    await callback.answer()
+    await state.update_data(template_id=callback_data.id, template_index=callback_data.index,
+                            template_is_chosen=callback_data.is_chosen,
+                            message_id=callback.message.message_id)
+    await state.set_state(TemplateEditStates.template_name)
+    await callback.message.edit_text(
+        "Введите новое название для шаблона",
+        reply_markup=get_cancel_button()
+    )
 
-# @router.message(F.text, TemplateEditStates.template_name)
-# async def handle_new_template_name(message: Message, state: FSMContext, session: AsyncSession):
-#     new_template_name = message.text.strip()
-#     if len(new_template_name) > MAX_TEMPLATE_NAME_LENGTH:
-#         await message.answer(f"Длина названия не должна превышать {MAX_TEMPLATE_NAME_LENGTH}."
-#                              f" Придумайте другое название")
-#         return
-#     template_data = (await state.get_data())
-#     template_id, template_index, template_is_chosen = (
-#         template_data["template_id"],
-#         template_data["template_index"],
-#         template_data["template_is_chosen"]
-#     )
-#     try:
-#         updated_template = await Template.update(session=session, primary_key=template_id, name=new_template_name)
-#         if not updated_template:
-#             await message.answer("Редактируемый шаблон не найден", reply_markup=ReplyKeyboardRemove())
-#             await get_templates_list(message, message.from_user.id, session)
-#             return
-#         await message.answer("Название шаблона успешно изменено")
-#         new_template_info = html.bold(html.italic("✅ Выбран для рассылки ✅\n\n")) if template_is_chosen else ""
-#         new_template_info = new_template_info + LEXICON["ADMIN"]["TEMPLATE"]['template_info'].format(
-#             template_index,
-#             new_template_name,
-#             updated_template.formated_description
-#         )
-#         await message.answer(new_template_info,
-#                              reply_markup=get_template_edit_inline_kb(template=updated_template,
-#                                                                       template_is_chosen=template_is_chosen,
-#                                                                       template_index=template_index))
-#     except Exception as e:
-#         await message.answer(f"Не удалось изменить название шаблона. {e}")
-#         await get_templates_list(message, message.from_user.id, session)
-#     finally:
-#         await state.clear()
+@router.message(F.text, TemplateEditStates.template_name)
+async def handle_new_template_name(message: Message, state: FSMContext, session: AsyncSession):
+    new_template_name = message.text.strip()
+    state_data = await state.get_data()
+    message_id = state_data["message_id"]
+    if len(new_template_name) > MAX_TEMPLATE_NAME_LENGTH:
+        await message.bot.send_message(
+            text=f"Длина названия не должна превышать {MAX_TEMPLATE_NAME_LENGTH}. Придумайте другое название",
+            chat_id=message.from_user.id,
+            reply_markup=get_cancel_button())
+        await message.bot.delete_message(
+            chat_id=message.from_user.id,
+            message_id=message_id
+        )
+        return
+    template_id, template_index, template_is_chosen = (
+        state_data["template_id"],
+        state_data["template_index"],
+        state_data["template_is_chosen"]
+    )
+    try:
+        updated_template = await Template.update(session=session, primary_key=template_id, name=new_template_name)
+        if not updated_template:
+            await get_templates_list(message, message.from_user.id, session)
+            return
+        await message.answer("Название шаблона успешно изменено")
+        new_template_info = html.bold(html.italic("✅ Выбран для рассылки ✅\n\n")) if template_is_chosen else ""
+        new_template_info = new_template_info + LEXICON["ADMIN"]["TEMPLATE"]['template_info'].format(
+            template_index,
+            new_template_name,
+            updated_template.formated_description
+        )
+        await message.answer(new_template_info,
+                             reply_markup=get_template_edit_inline_kb(template=updated_template,
+                                                                      template_index=template_index))
+    except Exception as e:
+        await message.answer(f"Не удалось изменить название шаблона. {e}")
+        await get_templates_list(message, message.from_user.id, session)
+    finally:
+        await state.clear()
+        await message.bot.delete_message(
+            chat_id=message.from_user.id,
+            message_id=message_id
+        )
 
 
 # @router.message(TemplateEditStates.template_name)
@@ -262,7 +276,7 @@ async def handle_template_delete(callback: CallbackQuery, session: AsyncSession,
         await callback.answer(f"Не удалось удалить данный шаблон. {e}")
         await get_templates_list(callback.message, callback_data.creator_id, session)
 
-@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.bckto_lst))
+@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.back))
 async def handle_back_to_templates(callback: CallbackQuery, session: AsyncSession,
                                    admin: User):
     anchor, forward, _ = await get_page_anchor_state(admin.id)

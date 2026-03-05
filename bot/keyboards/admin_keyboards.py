@@ -55,17 +55,17 @@ def get_admin_panel_template_menu_kb():
 class TemplateEditAction(StrEnum):
     view = auto()
     choose = auto()
-    edit_name = auto()
-    edit_desc = auto()
+    name = auto()
+    desc = auto()
     delete = auto()
-    bckto_lst = auto()
+    back = auto()
 
 
 action_to_text = {
-    TemplateEditAction.edit_name: "Изменить название",
-    TemplateEditAction.edit_desc: "Изменить описание",
+    TemplateEditAction.name: "Изменить название",
+    TemplateEditAction.desc: "Изменить описание",
     TemplateEditAction.delete: "Удалить шаблон",
-    TemplateEditAction.bckto_lst: "Назад",
+    TemplateEditAction.back: "Назад",
     TemplateEditAction.choose: "Выбрать для рассылки",
 }
 

@@ -15,7 +15,7 @@ if typing.TYPE_CHECKING:
 
 class Template(BaseModel):
     __tablename__ = 'templates'
-    # _must_be_active = True
+    _must_be_active = True
 
     name: Mapped[str] = mapped_column(VARCHAR(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
