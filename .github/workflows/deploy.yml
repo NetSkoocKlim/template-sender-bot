@@ -18,6 +18,7 @@ jobs:
           script: |
             cd /home/korepanovgrisha2005/Simple-template-sender-bot
             
+            git restore *
             git pull origin master
-            
+          
             docker compose up -d --build
