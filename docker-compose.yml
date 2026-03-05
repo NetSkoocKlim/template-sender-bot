@@ -1,6 +1,8 @@
 services:
   bot:
-    image: lalka618/sender-bot:latest
+    build:
+      dockerfile: Dockerfile
+      context: .
     container_name: tg_bot
     env_file: .env
     depends_on:
