@@ -27,11 +27,7 @@ async def proceed_secret_command(message: Message, session: AsyncSession):
     if not user.is_admin:
         setattr(user, "is_admin", True)
         await message.answer(text='Вы получили доступ к админ-панели.\n'
-                                  'Чтобы перейти к ней нажмите на кнопку ниже.\n'
-                                  'Для перехода к ней в дальнейшем необходимо будет использовать /admin',
-                             reply_markup=ReplyKeyboardMarkup(keyboard=[
-                                 [KeyboardButton(text="Панель администратора")]
-                             ], resize_keyboard=True))
+                                  'Чтобы перейти используйте команду /admin\n')
 
         await message.delete()
 
