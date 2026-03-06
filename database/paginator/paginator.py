@@ -248,7 +248,6 @@ class Paginator:
 
         current_page = incoming_page or 1
 
-        # Генерация курсоров
         next_cursor = None
         prev_cursor = None
 

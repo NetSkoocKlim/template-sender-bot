@@ -186,8 +186,8 @@ class BaseModel(Base):
         if instance:
             for attr, value in kwargs.items():
                 setattr(instance, attr, value)
-            session.add(instance)
             await session.flush()
+            return instance
         return instance
 
     @classmethod

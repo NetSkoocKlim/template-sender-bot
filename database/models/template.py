@@ -27,17 +27,3 @@ class Template(BaseModel):
 
     creator: Mapped["User"] = relationship(back_populates="templates")
 
-
-    @classmethod
-    async def update(
-            cls: t.Type["Template"],
-            session: AsyncSession,
-            primary_key: int,
-            **kwargs,
-    ) -> t.Any["Template", None]:
-        instance = await session.get(cls, primary_key)
-        if instance and instance.is_active:
-            for key, value in kwargs.items():
-                setattr(instance, key, value)
-            return instance
-        return None
