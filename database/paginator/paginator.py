@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy import desc, func, asc, BinaryExpression, or_, and_, Select, select, ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import Template, Mailing
+from database.models import Template, Mailing, BaseModel
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -95,6 +95,8 @@ class AnchorColumn:
 
 
 class Paginator:
+    _MODEL: BaseModel
+
     @staticmethod
     def _get_ordering(anchor_columns: t.Sequence[AnchorColumn], forward: bool) -> t.List[t.Any]:
         ordering = []
@@ -154,19 +156,6 @@ class Paginator:
     @staticmethod
     def decode_anchor_to_values(anchor: str) -> t.Tuple[t.List[t.Any], t.Optional[int]]:
         return Paginator._decode_anchor(anchor)
-
-    @staticmethod
-    async def count_total(session: AsyncSession, base_stmt: Select) -> int:
-        logger.info("Counting total rows for base statement")
-        try:
-            count_stmt = base_stmt.with_only_columns(func.count(), maintain_column_froms=True)
-            res = await session.execute(count_stmt)
-            total = int(res.scalar_one() or 0)
-            logger.info("Total rows: %d", total)
-            return total
-        except Exception:
-            logger.exception("Failed to count total rows")
-            raise
 
     @staticmethod
     def _build_keyset_filter(anchor_columns: t.Sequence[AnchorColumn], anchor_values: t.Sequence[t.Any], forward: bool,
@@ -274,7 +263,7 @@ class Paginator:
         total_pages = None
         if compute_page_info:
             try:
-                total = await Paginator.count_total(session=session, base_stmt=base_stmt)
+                total = await cls._MODEL.count_total(session=session, base_stmt=base_stmt)
                 total_pages = max(1, math.ceil(total / page_size))
                 logger.info("Computed total pages: %d (total rows=%d page_size=%d)", total_pages, total, page_size)
             except Exception:

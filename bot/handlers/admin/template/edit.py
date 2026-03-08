@@ -283,8 +283,7 @@ async def handle_template_delete(callback: CallbackQuery, session: AsyncSession,
         if not template_to_delete:
             raise Exception("Шаблон уже был удалён")
         anchor, forward, current_page = await get_page_anchor_state(admin.id)
-        stmt = Template.get_select_statement(filter_by={"creator_id": admin.id})
-        templates_count = await TemplatePaginator.count_total(session=session, base_stmt=stmt)
+        templates_count = await Template.count_total(session=session)
         page_count = math.ceil(templates_count / TemplatePaginator.PAGE_SIZE)
         if current_page > page_count:
             if anchor:

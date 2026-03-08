@@ -2,7 +2,7 @@ import datetime
 import typing as t
 from dataclasses import dataclass
 
-from sqlalchemy import Column, select, func, BigInteger, desc, TIMESTAMP
+from sqlalchemy import Column, select, func, BigInteger, desc, TIMESTAMP, Select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload, DeclarativeBase, Mapped, mapped_column
 
@@ -58,6 +58,7 @@ class BaseModel(Base):
             filters: t.Sequence[t.Any] = None,
             filter_by: dict[str, t.Any] = None,
             order_by: t.Union[Column, None] = None,
+            limit: int | None = None,
     ):
         if select_value is not None:
             statement = select(select_value)
@@ -80,6 +81,9 @@ class BaseModel(Base):
             statement = statement.filter(*filters)
         if order_by is not None:
             statement = statement.order_by(order_by)
+
+        if limit:
+            statement = statement.limit(limit)
 
         return statement
 
@@ -233,6 +237,18 @@ class BaseModel(Base):
         return instance
 
     @classmethod
+    async def delete_all_by_filter(
+            cls: t.Type[T],
+            session: AsyncSession,
+            **kwargs,
+    ):
+        """Delete all records from the database by a filters."""
+        stmt = delete(cls).filter_by(**kwargs)
+        await session.execute(stmt)
+        await session.flush()
+
+
+    @classmethod
     async def create_or_update(
             cls: t.Type[T],
             session: AsyncSession,
@@ -274,9 +290,10 @@ class BaseModel(Base):
             session: AsyncSession,
             join_tables: t.Union[t.Any, t.List[t.Any]] = None,
             order_by: t.Union[Column, None] = None,
+            limit: int | None = None,
     ) -> t.Sequence[T]:
         """Get all records from the database."""
-        statement = cls.get_select_statement(join_tables=join_tables, order_by=order_by)
+        statement = cls.get_select_statement(join_tables=join_tables, order_by=order_by, limit=limit)
         result = await session.execute(statement)
         return result.scalars().all()
 
@@ -291,3 +308,23 @@ class BaseModel(Base):
         statement = cls.get_select_statement(join_tables=join_tables, filter_by=kwargs, order_by=order_by)
         result = await session.execute(statement)
         return result.scalars().all()
+
+
+    @classmethod
+    async def count_total(
+            cls,
+            session: AsyncSession,
+            filter_by: dict[str, t.Any] = None,
+            base_stmt: Select | None = None
+    ) -> int:
+        if base_stmt:
+            count_stmt = base_stmt.with_only_columns(func.count(), maintain_column_froms=True)
+        else:
+            stmt = cls.get_select_statement(
+                filter_by=filter_by,
+            )
+            count_stmt = stmt.with_only_columns(func.count(), maintain_column_froms=True)
+        res = await session.execute(count_stmt)
+        total = int(res.scalar_one() or 0)
+        return total
+

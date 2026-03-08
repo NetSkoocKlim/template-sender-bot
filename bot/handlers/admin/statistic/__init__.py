@@ -31,12 +31,8 @@ async def statistic_menu_handler(callback: CallbackQuery,
     if not last_mailing:
         await callback.answer("Вы ещё не совершали рассылку")
         return
-    stmt = Mailing.get_select_statement(
-        filter_by={"admin_id": admin.id}
-    )
-    mailing_count = await MailingPaginator.count_total(
+    mailing_count = await Mailing.count_total(
         session,
-        base_stmt=stmt
     )
     last_mailing_date = last_mailing.created_at.date()
 

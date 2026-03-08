@@ -202,22 +202,23 @@ def get_admin_panel_receiver_menu_kb():
     builder.adjust(1, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
-class ReceiverData(CallbackData, prefix="receiver_data"):
-    username: str
 
-def get_receivers_list_kb(receivers: str):
+def get_receivers_list_kb(need_download: bool = False):
     builder = InlineKeyboardBuilder()
-    for receiver in receivers.split():
-        builder.button(text=receiver,
-                       callback_data=ReceiverData(username=receiver).pack())
-    builder.adjust(2)
+    if need_download:
+        builder.row(
+            InlineKeyboardButton(
+                text="Скачать полный список",
+                callback_data="download_receivers_list"
+            )
+        )
     builder.row(
         InlineKeyboardButton(
             text="Назад",
             callback_data="back_to_receivers_menu"
         )
     )
-    return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
+    return builder.as_markup(resize_keyboard=True)
 
 
 class AdminPanelMailingOptions(StrEnum):
