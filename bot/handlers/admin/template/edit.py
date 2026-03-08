@@ -86,6 +86,7 @@ async def handle_edit_template_button(callback: CallbackQuery, session: AsyncSes
     try:
         await get_templates_list(callback.message, admin.id, session, callback=callback)
     except Exception as e:
+        logging.exception(e)
         await callback.answer(f"Something went wrong.")
 
 

@@ -11,7 +11,7 @@ from bot.keyboards.admin_keyboards import get_admin_panel_mailing_menu_kb, Admin
     get_admin_panel_chosen_template_kb, AdminPanelChosenTemplateOptions, get_admin_panel_template_menu_kb, \
     get_admin_panel_receiver_menu_kb, get_admin_panel_menu_kb
 from bot.lexicon import LEXICON
-from database.models import User, Template, Mailing
+from database.models import User, Template, Mailing, Receiver
 from redis.asyncio import Redis
 
 from database.redis import admin_receivers_key
@@ -25,22 +25,31 @@ router = Router()
 @router.callback_query(F.data == AdminPanelChosenTemplateOptions.back)
 async def handle_admin_mailing_menu(callback: CallbackQuery,
                                     redis: Redis,
-                                    admin: User,):
-    chosen_template = await redis.get(admin_chosen_mailing_template_key(admin.id))
-    receivers = await redis.get(admin_receivers_key(admin.id))
+                                    admin: User,
+                                    session: AsyncSession):
+    chosen_template = await Template.get_by_filter(
+        session=session,
+        admin_id=admin.id,
+        is_chosen_for_mailing=True
+    )
     if not chosen_template:
         await callback.answer("Перед началом рассылки необходимо выбрать шаблон")
         return
-
-    if not receivers:
+    saved_receivers_count = await Receiver.count_total(
+        session=session,
+        filter_by={
+            "admin_id": admin.id,
+        }
+    )
+    if saved_receivers_count == 0:
         await callback.answer("Перед началом рассылки необходимо указать список пользователей")
         return
-    template_index, _, template_name = chosen_template.split(":")
+    template_name = Template.name
 
-
-    mailing_info_text = LEXICON["ADMIN"]["MAILING"]["main"].format(len(receivers.split()),
-                                                                    template_index,
-                                                                    template_name)
+    mailing_info_text = LEXICON["ADMIN"]["MAILING"]["main"].format(
+        saved_receivers_count,
+        template_name
+    )
     await callback.answer()
     await callback.message.edit_text(text=mailing_info_text,
                          reply_markup=get_admin_panel_mailing_menu_kb())
@@ -54,7 +63,6 @@ async def handle_choose_template_menu(callback: CallbackQuery, admin: User,
     template_index, template_id, _ = chosen_template.split(":")
     template = await Template.get(session, int(template_id))
     template_info = "Для рассылки будет использоваться следующий шаблон:\n\n" + LEXICON["ADMIN"]["TEMPLATE"]["template_info"].format(
-        template_index,
         template.name,
         template.formated_description
     )
@@ -65,8 +73,7 @@ async def handle_choose_template_menu(callback: CallbackQuery, admin: User,
 @router.callback_query(F.data == AdminPanelChosenTemplateOptions.choose_another)
 async def handle_choose_another_template_button(callback: CallbackQuery, admin: User,
                                                 session: AsyncSession):
-    page_count = await Template.total_pages(session=session)
-    await get_templates_list(callback.message, admin.id, session, page_count=page_count)
+    await get_templates_list(callback.message, admin.id, session)
 
 
 def format_mailing_report(total: int,
@@ -75,8 +82,7 @@ def format_mailing_report(total: int,
                          max_list=10) -> str:
     not_found = len(unresolved_usernames)
     failed = len(failed_usernames)
-    lines = []
-    lines.append("📣 Результат рассылки\n")
+    lines = ["📣 Результат рассылки\n"]
 
     if not_found == 0 and failed == 0:
         lines.append(f"Сообщение успешно доставлено всем указанным пользователям")
@@ -106,20 +112,25 @@ def format_mailing_report(total: int,
 async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
                                       redis: Redis,
                                       session: AsyncSession):
-    chosen_template = await redis.get(admin_chosen_mailing_template_key(admin.id))
-    receivers = await redis.get(admin_receivers_key(admin.id))
+    chosen_template = await Template.get_by_filter(
+        session=session,
+        admin_id=admin.id,
+        is_chosen_for_mailing=True
+    )
     if not chosen_template:
         await callback.answer("Перед началом рассылки необходимо выбрать шаблон")
         return
+
+    receivers = await Receiver.all_by_filter(
+        session=session,
+        admin_id=admin.id,
+    )
     if not receivers:
         await callback.answer("Вы не сохранили ни одного юзернейма, кому необходимо будет отправить сообщение")
         return
-    usernames = receivers.split()
-    user_list_length = len(usernames)
 
-    _, template_id, _ = chosen_template.split(":")
-    template_description = (await Template.get(session, int(template_id))).formated_description
-
+    user_list_length = len(receivers)
+    usernames = [receiver.username for receiver in receivers]
     receivers_ids = await User.get_ids_by_usernames(session=session, usernames=usernames)
     unresolved_usernames = [u for u, uid in zip(usernames, receivers_ids) if uid is None]
     failed_usernames = []
@@ -129,8 +140,10 @@ async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
         if receiver_id is None:
             continue
         try:
-            await callback.bot.send_message(chat_id=receiver_id,
-                                           text=template_description)
+            await callback.bot.send_message(
+                chat_id=receiver_id,
+                text=chosen_template.formated_description
+            )
             success_usernames.append(receiver_username)
         except Exception as e:
             failed_usernames.append(receiver_username)
@@ -140,7 +153,7 @@ async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
     created_result = await Mailing.create(
         session=session,
         admin_id=admin.id,
-        template_id=int(template_id),
+        template_id=int(chosen_template.id),
         started_at=started_at,
         finished_at=finished_at,
         total_requested=user_list_length,
@@ -148,29 +161,30 @@ async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
         delivery_failed_count=len(failed_usernames)
     )
 
-    csv_bytes = create_mailing_result_csv(
-        success_usernames,
-        unresolved_usernames,
-        failed_usernames,
-    )
-
-    key = f"mailing-result-{created_result.id}"
-    data = aiohttp.FormData()
-    data.add_field("file",
-                   csv_bytes,
-                   filename=f"mailing-result-"
-                            f"{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}"
-                            f".csv_bytes",
-                   content_type="application/octet-stream")
-    if key is not None:
-        data.add_field("key", key)
     try:
+        data = aiohttp.FormData()
+
+        csv_bytes = create_mailing_result_csv(
+            success_usernames,
+            unresolved_usernames,
+            failed_usernames,
+        )
+
+        data.add_field("file",
+                       csv_bytes,
+                       filename=f"mailing-result-"
+                                f"{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}"
+                                f".csv_bytes",
+                       content_type="application/octet-stream")
+        key = f"mailing-result-{created_result.id}"
+        data.add_field("key", key)
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "http://127.0.0.1:8004/buckets",
                 data=data
             ) as response:
-                print(await response.json())
+                if response.status != 200 and response.status != 201:
+                    raise
     except Exception as e:
         key = None
     setattr(created_result, "csv_result_key", key)

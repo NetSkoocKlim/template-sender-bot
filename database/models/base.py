@@ -317,7 +317,7 @@ class BaseModel(Base):
             filter_by: dict[str, t.Any] = None,
             base_stmt: Select | None = None
     ) -> int:
-        if base_stmt:
+        if base_stmt is not None:
             count_stmt = base_stmt.with_only_columns(func.count(), maintain_column_froms=True)
         else:
             stmt = cls.get_select_statement(

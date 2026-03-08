@@ -95,7 +95,7 @@ class AnchorColumn:
 
 
 class Paginator:
-    _MODEL: BaseModel
+    _Model: "BaseModel"
 
     @staticmethod
     def _get_ordering(anchor_columns: t.Sequence[AnchorColumn], forward: bool) -> t.List[t.Any]:
@@ -263,7 +263,7 @@ class Paginator:
         total_pages = None
         if compute_page_info:
             try:
-                total = await cls._MODEL.count_total(session=session, base_stmt=base_stmt)
+                total = await cls._Model.count_total(session=session, base_stmt=base_stmt)
                 total_pages = max(1, math.ceil(total / page_size))
                 logger.info("Computed total pages: %d (total rows=%d page_size=%d)", total_pages, total, page_size)
             except Exception:
@@ -285,7 +285,7 @@ class Paginator:
 
 
 class TemplatePaginator(Paginator):
-    _MODEL = Template
+    _Model = Template
     PAGE_SIZE = 2
     _SORT_MAP = {
         "id": Template.id,
@@ -316,11 +316,11 @@ class TemplatePaginator(Paginator):
                 anchor_columns.append(AnchorColumn(column, direction))
                 logger.debug("Added anchor column for field '%s' direction '%s'", field_name, direction)
 
-        if not any(ac.col == cls._MODEL.id for ac in anchor_columns):
-            anchor_columns.append(AnchorColumn(cls._MODEL.id, "asc"))
+        if not any(ac.col == cls._Model.id for ac in anchor_columns):
+            anchor_columns.append(AnchorColumn(cls._Model.id, "asc"))
             logger.debug("Added id anchor column as tiebreaker")
 
-        return await Paginator.paginate(
+        return await cls.paginate(
             session=session,
             base_stmt=base_stmt,
             anchor_columns=anchor_columns,
@@ -332,7 +332,7 @@ class TemplatePaginator(Paginator):
 
 
 class MailingPaginator(Paginator):
-    _MODEL = Mailing
+    _Model = Mailing
     PAGE_SIZE = 2
     _SORT_MAP = {
         "id": Mailing.id,
@@ -362,11 +362,11 @@ class MailingPaginator(Paginator):
                 anchor_columns.append(AnchorColumn(column, direction))
                 logger.debug("Added anchor column for field '%s' direction '%s'", field_name, direction)
 
-        if not any(ac.col == cls._MODEL.id for ac in anchor_columns):
-            anchor_columns.append(AnchorColumn(cls._MODEL.id, "asc"))
+        if not any(ac.col == cls._Model.id for ac in anchor_columns):
+            anchor_columns.append(AnchorColumn(cls._Model.id, "asc"))
             logger.debug("Added id anchor column as tiebreaker")
 
-        return await Paginator.paginate(
+        return await cls.paginate(
             session=session,
             base_stmt=base_stmt,
             anchor_columns=anchor_columns,
