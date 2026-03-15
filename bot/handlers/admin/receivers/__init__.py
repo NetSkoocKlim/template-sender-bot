@@ -8,9 +8,8 @@ from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.keyboards import AdminPanelOptions
-from bot.keyboards.admin_keyboards import get_admin_panel_receiver_menu_kb, AdminPanelReceiverOptions, \
-    get_receivers_list_kb
+from bot.keyboards.admin.constants import AdminPanelOptions, AdminPanelReceiverOptions
+from bot.keyboards.admin.menu import get_admin_panel_receiver_menu_kb, get_receivers_list_kb
 from bot.lexicon import LEXICON
 from bot.states.states import ReceiverMenuStates
 from database.models import User, Receiver
@@ -27,14 +26,14 @@ MAX_RECEIVERS_COUNT = 400
 MAX_FILE_SIZE = 1 * 1024 * 1024
 MAX_RECEIVERS_TO_SHOW = 20
 
-@router.callback_query(F.data == AdminPanelOptions.user_list)
+@router.callback_query(F.data == AdminPanelOptions.user_list.name)
 async def handle_admin_receiver_menu(callback: CallbackQuery):
     await callback.answer()
     await callback.message.edit_text(text=LEXICON["ADMIN"]["RECEIVER"]["main"],
                          reply_markup=get_admin_panel_receiver_menu_kb())
 
 
-@router.callback_query(F.data == AdminPanelReceiverOptions.view)
+@router.callback_query(F.data == AdminPanelReceiverOptions.view_rcvr.name)
 async def handle_receiver_view_button(callback: CallbackQuery,
                                       admin: User,
                                       session: AsyncSession,
@@ -94,7 +93,7 @@ async def handle_receiver_callback_query(callback: CallbackQuery):
                          reply_markup=get_admin_panel_receiver_menu_kb())
 
 
-@router.callback_query(F.data == AdminPanelReceiverOptions.clear)
+@router.callback_query(F.data == AdminPanelReceiverOptions.clear_rcvr.name)
 async def handle_receiver_clear(callback: CallbackQuery, admin: User, session: AsyncSession):
     await Receiver.delete_all_by_filter(
         session=session,

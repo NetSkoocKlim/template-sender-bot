@@ -1,35 +1,38 @@
+import asyncio
 import datetime
+import logging
 
-import aiohttp
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import  F, Router
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+
+from aiogram.exceptions import TelegramRetryAfter
+
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.handlers.admin.template.edit import get_templates_list
-from bot.keyboards import AdminPanelOptions
-from bot.keyboards.admin_keyboards import get_admin_panel_mailing_menu_kb, AdminPanelMailingOptions, \
-    get_admin_panel_chosen_template_kb, AdminPanelChosenTemplateOptions, get_admin_panel_template_menu_kb, \
-    get_admin_panel_receiver_menu_kb, get_admin_panel_menu_kb
+from bot.keyboards.admin.constants import AdminPanelOptions, AdminPanelMailingOptions, AdminPanelChosenTemplateOptions
+
+from bot.keyboards.admin.menu import (get_admin_panel_mailing_menu_kb,
+                                      get_admin_panel_chosen_template_kb)
 from bot.lexicon import LEXICON
 from database.models import User, Template, Mailing, Receiver
 from redis.asyncio import Redis
 
-from database.redis import admin_receivers_key
 from database.redis.redis_keys import admin_chosen_mailing_template_key
 from bot.utils import create_mailing_result_csv
-
+from services.object_storage_app.app import ObjectStorageApp
 
 router = Router()
-
-@router.callback_query(F.data == AdminPanelOptions.mailing)
-@router.callback_query(F.data == AdminPanelChosenTemplateOptions.back)
+logger = logging.getLogger(__name__)
+@router.callback_query(F.data == AdminPanelOptions.mailing.name)
+@router.callback_query(F.data == AdminPanelChosenTemplateOptions.back2mlng.name)
 async def handle_admin_mailing_menu(callback: CallbackQuery,
-                                    redis: Redis,
                                     admin: User,
                                     session: AsyncSession):
     chosen_template = await Template.get_by_filter(
         session=session,
-        admin_id=admin.id,
+        creator_id=admin.id,
         is_chosen_for_mailing=True
     )
     if not chosen_template:
@@ -44,7 +47,7 @@ async def handle_admin_mailing_menu(callback: CallbackQuery,
     if saved_receivers_count == 0:
         await callback.answer("Перед началом рассылки необходимо указать список пользователей")
         return
-    template_name = Template.name
+    template_name = chosen_template.name
 
     mailing_info_text = LEXICON["ADMIN"]["MAILING"]["main"].format(
         saved_receivers_count,
@@ -55,7 +58,7 @@ async def handle_admin_mailing_menu(callback: CallbackQuery,
                          reply_markup=get_admin_panel_mailing_menu_kb())
 
 
-@router.callback_query(F.data == AdminPanelMailingOptions.view_chosen_template)
+@router.callback_query(F.data == AdminPanelMailingOptions.view_chosen_template.name)
 async def handle_choose_template_menu(callback: CallbackQuery, admin: User,
                                       redis: Redis,
                                       session: AsyncSession):
@@ -70,7 +73,7 @@ async def handle_choose_template_menu(callback: CallbackQuery, admin: User,
     await callback.message.edit_text(text=template_info, reply_markup=get_admin_panel_chosen_template_kb())
 
 
-@router.callback_query(F.data == AdminPanelChosenTemplateOptions.choose_another)
+@router.callback_query(F.data == AdminPanelChosenTemplateOptions.choose_another.name)
 async def handle_choose_another_template_button(callback: CallbackQuery, admin: User,
                                                 session: AsyncSession):
     await get_templates_list(callback.message, admin.id, session)
@@ -108,13 +111,17 @@ def format_mailing_report(total: int,
     return "\n".join(lines)
 
 
-@router.callback_query(F.data == AdminPanelMailingOptions.begin_mailing)
+MAX_RETRIES = 5
+BASE_RETRY_DELAY = 1.0
+
+@router.callback_query(F.data == AdminPanelMailingOptions.begin_mailing.name)
 async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
                                       redis: Redis,
-                                      session: AsyncSession):
+                                      session: AsyncSession,
+                                      s3_storage: ObjectStorageApp):
     chosen_template = await Template.get_by_filter(
         session=session,
-        admin_id=admin.id,
+        creator_id=admin.id,
         is_chosen_for_mailing=True
     )
     if not chosen_template:
@@ -136,21 +143,51 @@ async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
     failed_usernames = []
     success_usernames = []
     started_at = datetime.datetime.now()
+
     for receiver_username, receiver_id in zip(usernames, receivers_ids):
         if receiver_id is None:
             continue
-        try:
-            await callback.bot.send_message(
-                chat_id=receiver_id,
-                text=chosen_template.formated_description
-            )
-            success_usernames.append(receiver_username)
-        except Exception as e:
-            failed_usernames.append(receiver_username)
-
+        attempt = 0
+        while True:
+            try:
+                await callback.bot.send_message(
+                    chat_id=receiver_id,
+                    text=chosen_template.formated_description
+                )
+                success_usernames.append(receiver_username)
+                break
+            except TelegramRetryAfter as e:
+                wait_for = getattr(e, "retry_after", None) or (BASE_RETRY_DELAY * attempt)
+                logger.warning("TelegramRetryAfter for %s: waiting %.1f sec (attempt %d)",
+                            receiver_username, wait_for, attempt + 1)
+                await asyncio.sleep(wait_for + 0.5)
+                if attempt > MAX_RETRIES:
+                    logger.error("Max retries exceeded for %s after RetryAfter", receiver_username)
+                    failed_usernames.append(receiver_username)
+                    break
+            except Exception as e:
+                attempt += 1
+                if attempt > MAX_RETRIES:
+                    logger.error("Unexpected error, giving up on %s", e, receiver_username)
+                    failed_usernames.append(receiver_username)
+                    break
+                delay = BASE_RETRY_DELAY * (attempt-1)
+                logger.warning("Unexpected error sending to %s: %s — retrying in %.1f sec (attempt %d)",
+                            receiver_username, e, delay, attempt)
+                await asyncio.sleep(delay)
+    try:
+        csv_bytes = create_mailing_result_csv(
+            success_usernames,
+            unresolved_usernames,
+            failed_usernames,
+        )
+        key = f"mailing-result-{admin.id}-{int(datetime.datetime.now().timestamp())}"
+        await s3_storage.upload_file(csv_bytes.getvalue(), key)
+    except Exception as e:
+        logger.exception(e)
+        key = None
     finished_at = datetime.datetime.now()
-
-    created_result = await Mailing.create(
+    await Mailing.create(
         session=session,
         admin_id=admin.id,
         template_id=int(chosen_template.id),
@@ -158,37 +195,9 @@ async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
         finished_at=finished_at,
         total_requested=user_list_length,
         unresolved_count=len(unresolved_usernames),
-        delivery_failed_count=len(failed_usernames)
+        delivery_failed_count=len(failed_usernames),
+        csv_result_key=key
     )
-
-    try:
-        data = aiohttp.FormData()
-
-        csv_bytes = create_mailing_result_csv(
-            success_usernames,
-            unresolved_usernames,
-            failed_usernames,
-        )
-
-        data.add_field("file",
-                       csv_bytes,
-                       filename=f"mailing-result-"
-                                f"{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}"
-                                f".csv_bytes",
-                       content_type="application/octet-stream")
-        key = f"mailing-result-{created_result.id}"
-        data.add_field("key", key)
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "http://127.0.0.1:8004/buckets",
-                data=data
-            ) as response:
-                if response.status != 200 and response.status != 201:
-                    raise
-    except Exception as e:
-        key = None
-    setattr(created_result, "csv_result_key", key)
-
     report = format_mailing_report(
         total=user_list_length,
         unresolved_usernames=unresolved_usernames,
@@ -199,7 +208,7 @@ async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
                                          inline_keyboard=[ [
                                              InlineKeyboardButton(
                                                  text=AdminPanelOptions.back,
-                                                 callback_data=AdminPanelOptions.back,
+                                                 callback_data=AdminPanelOptions.back.name,
                                              )
                                              ]
                                          ]

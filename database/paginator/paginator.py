@@ -7,10 +7,11 @@ import typing as t
 
 from dataclasses import dataclass
 
-from sqlalchemy import desc, func, asc, BinaryExpression, or_, and_, Select, select, ColumnElement
+from sqlalchemy import desc, func, asc, BinaryExpression, or_, and_, Select, select, ColumnElement, TextClause
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Template, Mailing, BaseModel
+from database.paginator.anchor_store import retrieve_payload_by_token, store_payload_with_token, store_page_anchor_state
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -193,16 +194,50 @@ class Paginator:
             cls,
             session: AsyncSession,
             base_stmt: Select,
-            anchor_columns: t.Sequence[AnchorColumn],
-            page_size: int,
+
+            anchor_columns: t.Optional[t.Sequence[AnchorColumn]] = None,
+            page_size: int | None = None,
             anchor: t.Optional[str] = None,
             forward: bool = True,
             compute_page_info: bool = True,
             is_deletion: bool = False,
+
+            sort_by: t.Optional[t.List[t.Tuple[str, str]]] = None,
+            sort_map: t.Optional[t.Dict[str, t.Any]] = None,
+            default_sort_by: t.Optional[t.List[t.Tuple[str, str]]] = None,
     ) -> t.Tuple[t.List[t.Any], t.Optional[str], t.Optional[str], int, t.Optional[int]]:
+
+        if page_size is None:
+            page_size = getattr(cls, "PAGE_SIZE", 50)
 
         logger.info("Paginate called: page_size=%d anchor=%r forward=%s compute_page_info=%s is_deletion=%s",
                     page_size, anchor[:50] if anchor else None, forward, compute_page_info, is_deletion)
+
+        if anchor_columns is None:
+            if sort_by is None:
+                sort_by = getattr(cls, "_DEFAULT_SORT_BY", None) or default_sort_by or []
+            sort_map = sort_map or getattr(cls, "_SORT_MAP", {}) or {}
+
+            anchor_columns_list: t.List[AnchorColumn] = []
+            for field_name, direction in sort_by:
+                column = sort_map.get(field_name)
+                if column is not None:
+                    anchor_columns_list.append(AnchorColumn(column, direction))
+                    logger.debug("Added anchor column for field '%s' direction '%s'", field_name, direction)
+                else:
+                    logger.debug("Sort field '%s' ignored: not found in sort_map", field_name)
+            model_id_col = getattr(cls._Model, "id", None)
+            if model_id_col is not None and not any(getattr(ac.col, "key", None) == getattr(model_id_col, "key", None)
+                                                    or getattr(ac.col, "name", None) == getattr(model_id_col, "name",
+                                                                                                None)
+                                                    for ac in anchor_columns_list):
+                anchor_columns_list.append(AnchorColumn(model_id_col, "asc"))
+                logger.debug("Added id anchor column as tiebreaker")
+
+            anchor_columns = anchor_columns_list
+        else:
+            logger.debug("Using provided anchor_columns: %r", anchor_columns)
+
         stmt = base_stmt.order_by(*cls._get_ordering(anchor_columns, forward))
 
         incoming_page: t.Optional[int] = None
@@ -283,6 +318,32 @@ class Paginator:
             logger.debug("Got column value by name '%s': %r", getattr(col, "name", None), val)
             return val
 
+    @classmethod
+    async def get_next_page(
+            cls,
+            user_id: int,
+            session: AsyncSession,
+            filters: list[TextClause] | None = None,
+            anchor: str | None = None,
+            forward: bool = True,
+            is_deletion: bool = False,
+            is_back: bool = False,
+    ):
+        if anchor and not is_back and not is_deletion:
+            anchor = await retrieve_payload_by_token(anchor, user_id)
+        stmt = cls._Model.get_select_statement(filters=filters)
+        entities, backward_anchor, forward_anchor, current_page, total_pages = await cls.paginate(
+            session=session, base_stmt=stmt, anchor=anchor, forward=forward, is_deletion=is_deletion)
+        if len(entities) == 0:
+            return [], None, None, 0, 0
+        ext_backward = None
+        ext_forward = None
+        if backward_anchor and current_page != 1:
+            ext_backward = await store_payload_with_token(backward_anchor, user_id)
+        if forward_anchor and current_page != total_pages:
+            ext_forward = await store_payload_with_token(forward_anchor, user_id)
+        await store_page_anchor_state(user_id, anchor, forward, current_page)
+        return entities, ext_backward, ext_forward, current_page, total_pages
 
 class TemplatePaginator(Paginator):
     _Model = Template
@@ -292,43 +353,8 @@ class TemplatePaginator(Paginator):
         "created_at": Template.created_at,
         "name": Template.name
     }
-
     _DEFAULT_SORT_BY = [("created_at", "desc")]
 
-    @classmethod
-    async def paginate_page(
-            cls,
-            session: AsyncSession,
-            base_stmt: Select,
-            sort_by: t.List[t.Tuple[str, str]] | None = None,
-            page_size: int = PAGE_SIZE,
-            anchor: t.Optional[str] = None,
-            forward: bool = True,
-            is_deletion: bool = False,
-    ):
-        if not sort_by:
-            sort_by = cls._DEFAULT_SORT_BY
-        logger.info("TemplatePaginator.paginate_page called with sort_by=%r page_size=%d", sort_by, page_size)
-        anchor_columns = []
-        for field_name, direction in sort_by:
-            column = cls._SORT_MAP.get(field_name)
-            if column is not None:
-                anchor_columns.append(AnchorColumn(column, direction))
-                logger.debug("Added anchor column for field '%s' direction '%s'", field_name, direction)
-
-        if not any(ac.col == cls._Model.id for ac in anchor_columns):
-            anchor_columns.append(AnchorColumn(cls._Model.id, "asc"))
-            logger.debug("Added id anchor column as tiebreaker")
-
-        return await cls.paginate(
-            session=session,
-            base_stmt=base_stmt,
-            anchor_columns=anchor_columns,
-            page_size=page_size,
-            anchor=anchor,
-            forward=forward,
-            is_deletion=is_deletion
-        )
 
 
 class MailingPaginator(Paginator):
@@ -338,40 +364,6 @@ class MailingPaginator(Paginator):
         "id": Mailing.id,
         "created_at": Mailing.created_at,
     }
+    _DEFAULT_SORT_BY = [("created_at", "desc")]
 
-    _DEFAULT_SORT_BY = [("created_at", "desc") ]
 
-    @classmethod
-    async def paginate_page(
-            cls,
-            session: AsyncSession,
-            base_stmt: Select,
-            sort_by: t.List[t.Tuple[str, str]] | None = None,
-            page_size: int = PAGE_SIZE,
-            anchor: t.Optional[str] = None,
-            forward: bool = True,
-            is_deletion: bool = False,
-    ):
-        if not sort_by:
-            sort_by = cls._DEFAULT_SORT_BY
-        logger.info("MailingPaginator.paginate_page called with sort_by=%r page_size=%d", sort_by, page_size)
-        anchor_columns = []
-        for field_name, direction in sort_by:
-            column = cls._SORT_MAP.get(field_name)
-            if column is not None:
-                anchor_columns.append(AnchorColumn(column, direction))
-                logger.debug("Added anchor column for field '%s' direction '%s'", field_name, direction)
-
-        if not any(ac.col == cls._Model.id for ac in anchor_columns):
-            anchor_columns.append(AnchorColumn(cls._Model.id, "asc"))
-            logger.debug("Added id anchor column as tiebreaker")
-
-        return await cls.paginate(
-            session=session,
-            base_stmt=base_stmt,
-            anchor_columns=anchor_columns,
-            page_size=page_size,
-            anchor=anchor,
-            forward=forward,
-            is_deletion=is_deletion
-        )

@@ -11,8 +11,10 @@ from redis import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.handlers.admin.template.add import MAX_TEMPLATE_NAME_LENGTH, MAX_TEMPLATE_DESCRIPTION_LENGTH
-from bot.keyboards.admin_keyboards import AdminPanelTemplateOptions, get_templates_inline_kb, PaginateButtonData, \
-    TemplateEditData, TemplateEditAction, get_template_edit_inline_kb, get_admin_panel_template_menu_kb
+from bot.keyboards.admin.constants import AdminPanelTemplateOptions
+from bot.keyboards.admin.fabrics import PaginateButtonData, TemplateEditData, TemplateEditAction
+from bot.keyboards.admin.menu import (get_templates_inline_kb, get_template_edit_inline_kb,
+                                      get_admin_panel_template_menu_kb)
 from bot.keyboards.common import get_cancel_button
 from bot.lexicon import LEXICON
 from bot.states.states import TemplateEditStates
@@ -38,73 +40,79 @@ async def get_templates_list(
         is_back: bool = False,
         callback: CallbackQuery | None = None
     ):
-    if anchor and not is_back and not is_deletion:
-        anchor = await retrieve_payload_by_token(anchor, template_creator_id)
     filters = [sqlalchemy.text(f"templates.creator_id={template_creator_id}")]
-    stmt = Template.get_select_statement(filters=filters)
-    templates, backward_anchor, forward_anchor, current_page, total_pages = await TemplatePaginator.paginate_page(
-        session=session, base_stmt=stmt, anchor=anchor, forward=forward, is_deletion=is_deletion)
+    templates, backward_anchor, forward_anchor, current_page, total_pages = await TemplatePaginator.get_next_page(
+        user_id=template_creator_id,
+        session=session,
+        filters=filters,
+        anchor=anchor,
+        forward=forward,
+        is_deletion=is_deletion,
+        is_back=is_back,
+    )
     if len(templates) == 0 and callback:
         await callback.answer("У вас нет сохранённых шаблонов")
-        await message.edit_text(LEXICON["ADMIN"]["TEMPLATE"]["main"],
+        if not is_deletion:
+            await message.edit_text(LEXICON["ADMIN"]["TEMPLATE"]["main"],
                                 reply_markup=get_admin_panel_template_menu_kb())
         return
-
-    ext_backward = None
-    ext_forward = None
-    if backward_anchor and current_page != 1:
-        ext_backward = await store_payload_with_token(backward_anchor, template_creator_id)
-    if forward_anchor and current_page != total_pages:
-        ext_forward = await store_payload_with_token(forward_anchor, template_creator_id)
     try:
-        await store_page_anchor_state(template_creator_id, anchor, forward, current_page)
-    except Exception as e:
-        print(e)
-    try:
-        await message.edit_text(LEXICON["ADMIN"]["TEMPLATE"]["templates_list"],
-                             reply_markup=get_templates_inline_kb(templates,
-                                                                  forward_anchor=ext_forward,
-                                                                  backward_anchor=ext_backward,
-                                                                  page_count=total_pages,
-                                                                  page=current_page))
+        await message.edit_text(
+            LEXICON["ADMIN"]["TEMPLATE"]["templates_list"],
+            reply_markup=get_templates_inline_kb(
+                templates,
+                forward_anchor=forward_anchor,
+                backward_anchor=backward_anchor,
+                page_count=total_pages,
+                page=current_page,
+                page_size=TemplatePaginator.PAGE_SIZE
+            )
+        )
     except TelegramBadRequest as e:
         await message.answer(LEXICON["ADMIN"]["TEMPLATE"]["templates_list"],
                                 reply_markup=get_templates_inline_kb(
                                     templates,
-                                    forward_anchor=ext_backward,
-                                    backward_anchor=ext_backward,
+                                    forward_anchor=forward_anchor,
+                                    backward_anchor=backward_anchor,
                                     page_count=total_pages,
-                                    page=current_page
+                                    page=current_page,
+                                    page_size=TemplatePaginator.PAGE_SIZE
                                 )
                              )
     except Exception as e:
-        print(e)
+        logging.exception(e)
 
 
-@router.callback_query(F.data == AdminPanelTemplateOptions.edit_template)
+@router.callback_query(F.data == AdminPanelTemplateOptions.edit_template.name)
 async def handle_edit_template_button(callback: CallbackQuery, session: AsyncSession, admin: User):
     try:
-        await get_templates_list(callback.message, admin.id, session, callback=callback)
+        await get_templates_list(
+            callback.message,
+            admin.id,
+            session,
+            callback=callback
+        )
     except Exception as e:
         logging.exception(e)
         await callback.answer(f"Something went wrong.")
 
 
-@router.callback_query(PaginateButtonData.filter())
+@router.callback_query(PaginateButtonData.filter(F.model == "Template"))
 async def handle_pagination(callback: CallbackQuery,
                             callback_data: PaginateButtonData,
                             session: AsyncSession,
                             admin: User):
     anchor = callback_data.anchor
     forward = callback_data.forward
-    await callback.answer()
+
     await get_templates_list(
         callback.message,
-        session=session,
-        template_creator_id=admin.id,
-        forward=forward,
-        anchor=anchor
+        admin.id,
+        session,
+        anchor=anchor,
+        forward=forward
     )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "empty_pagination")
@@ -112,11 +120,10 @@ async def handle_empty_pagination(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.view))
+@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.view_tmplt))
 async def handle_template_edit(callback: CallbackQuery, session: AsyncSession, callback_data: TemplateEditData):
     try:
         template = await Template.get(session=session, primary_key=callback_data.id)
-
         if not template:
             await callback.message.answer(text="Шаблон не найден или был удалён.")
             return
@@ -135,7 +142,7 @@ async def handle_template_edit(callback: CallbackQuery, session: AsyncSession, c
     except Exception as e:
         await callback.answer(f"Failed to load template data. {e}", show_alert=True)
 
-@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.name), default_state)
+@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.name_tmplt), default_state)
 async def handle_template_edit_name(callback: CallbackQuery, state: FSMContext, callback_data: TemplateEditData):
     await callback.answer()
     await state.update_data(template_id=callback_data.id, template_index=callback_data.index,
@@ -205,7 +212,7 @@ async def handle_wrong_new_template_name(message: Message, state: FSMContext):
     )
 
 
-@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.desc), default_state)
+@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.desc_tmplt), default_state)
 async def handle_template_edit_description(callback: CallbackQuery, state: FSMContext,
                                            callback_data: TemplateEditData):
     await state.update_data(template_id=callback_data.id, template_index=callback_data.index,
@@ -275,7 +282,7 @@ async def handle_wrong_new_template_description(message: Message, state: FSMCont
     )
 
 
-@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.delete), default_state)
+@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.delete_tmplt), default_state)
 async def handle_template_delete(callback: CallbackQuery, session: AsyncSession, callback_data: TemplateEditData,
                                  admin: User):
     try:
@@ -292,39 +299,25 @@ async def handle_template_delete(callback: CallbackQuery, session: AsyncSession,
                 anchor = TemplatePaginator.anchor_from_values(values, page_count)
             forward = False
         await callback.answer("Шаблон успешно удалён")
-        await get_templates_list(
-            callback.message,
-            session=session,
-            anchor=anchor,
-            template_creator_id=admin.id,
-            forward=forward,
-            is_deletion=True,
-            callback=callback
-        )
+        await get_templates_list(callback.message, admin.id, session=session, anchor=anchor, forward=forward,
+                                 is_deletion=True, callback=callback)
 
     except Exception as e:
         await callback.answer(f"Не удалось удалить данный шаблон. {e}")
         await get_templates_list(callback.message, callback_data.creator_id, session)
 
-@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.back))
+@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.back_tmplt))
 async def handle_back_to_templates(callback: CallbackQuery, session: AsyncSession,
                                    admin: User):
     anchor, forward, _ = await get_page_anchor_state(admin.id)
-    await get_templates_list(
-        callback.message,
-        session=session,
-        anchor=anchor,
-        template_creator_id=admin.id,
-        forward=forward,
-        is_back=True
-    )
+    await get_templates_list(callback.message, admin.id, session=session, anchor=anchor, forward=forward,
+                             is_back=True)
     await callback.answer()
 
 
-@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.choose))
+@router.callback_query(TemplateEditData.filter(F.action == TemplateEditAction.choose_tmplt))
 async def handle_choose_template_button(callback: CallbackQuery, callback_data: TemplateEditData, redis: Redis,
                                         admin: User, session: AsyncSession):
-
     await Template.update_by_key(
         session=session,
         key=Template.is_chosen_for_mailing,
@@ -338,12 +331,6 @@ async def handle_choose_template_button(callback: CallbackQuery, callback_data: 
     )
     await callback.answer("Шаблон для рассылки успешно изменён.")
     anchor, forward, _ = await get_page_anchor_state(admin.id)
-    await get_templates_list(
-        callback.message,
-        session=session,
-        anchor=anchor,
-        template_creator_id=admin.id,
-        forward=forward,
-        is_back=True
-    )
+    await get_templates_list(callback.message, admin.id, session, anchor=anchor, forward=forward,
+                             is_back=True)
 

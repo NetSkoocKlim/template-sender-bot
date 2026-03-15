@@ -1,17 +1,16 @@
 __all__ = ["router"]
 
 from aiogram import F, Router, html
-from aiogram.filters import StateFilter, Command
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
+from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.lexicon import LEXICON
-from redis.asyncio import Redis
-from database.models import Template, User
-from bot.keyboards import AdminPanelOptions
-from bot.keyboards.admin_keyboards import get_admin_panel_template_menu_kb, get_template_edit_inline_kb, \
-    AdminPanelTemplateOptions
+from database.models import Template
+from bot.keyboards.admin.constants import AdminPanelOptions
+from bot.keyboards.admin.menu import get_admin_panel_template_menu_kb, get_template_edit_inline_kb
+
 from .add import router as template_add_router
 from .edit import router as template_edit_router
 from bot.states.states import TemplateEditStates, TemplateAddStates
@@ -23,7 +22,7 @@ router.include_routers(
 )
 
 
-@router.callback_query(F.data == AdminPanelOptions.template)
+@router.callback_query(F.data == AdminPanelOptions.template.name)
 @router.callback_query(F.data == "back_to_templates_menu")
 async def handle_admin_template_command(callback: CallbackQuery):
     await callback.answer()
@@ -55,7 +54,6 @@ async def handle_cancel_edit_template_command(callback: CallbackQuery, state: FS
     await callback.answer("Редактирование шаблона отменено")
     template_info = html.bold(html.italic("✅ Выбран для рассылки ✅\n\n")) if template_is_chosen else ""
     template_info = template_info + LEXICON["ADMIN"]["TEMPLATE"]['template_info'].format(
-        template_index,
         template.name,
         template.formated_description
     )

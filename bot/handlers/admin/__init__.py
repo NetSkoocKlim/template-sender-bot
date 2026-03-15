@@ -7,7 +7,8 @@ from aiogram.fsm.state import default_state
 from aiogram.types import Message, CallbackQuery
 
 from bot.filters import IsAdmin
-from bot.keyboards.admin_keyboards import get_admin_panel_menu_kb, AdminPanelOptions
+from bot.keyboards.admin.constants import AdminPanelOptions
+from bot.keyboards.admin.menu import get_admin_panel_menu_kb
 from .template import router as template_router
 from .receivers import router as receivers_router
 from .mailing import router as mailing_router
@@ -35,7 +36,7 @@ async def handle_admin_command(message: Message, state: FSMContext):
     await message.answer(text=LEXICON["ADMIN"]["main"],
                          reply_markup=get_admin_panel_menu_kb())
 
-@router.callback_query(F.data == AdminPanelOptions.back, default_state)
+@router.callback_query(F.data == AdminPanelOptions.back.name, default_state)
 async def handle_admin_command(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text(text=LEXICON["ADMIN"]["main"],

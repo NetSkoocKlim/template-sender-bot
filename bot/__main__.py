@@ -14,6 +14,7 @@ from bot.middelwares.throttling_middleware import ThrottlingMiddleware
 from bot.middelwares.requestlimit_middleware import RequestLimitMiddleware
 from bot.handlers import router as main_router
 from config import settings
+from services.object_storage_app.app import ObjectStorageApp
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -24,6 +25,8 @@ async def on_startup(dispatcher: Dispatcher):
 
     redis = await get_redis()
     dispatcher["redis"] = redis
+    s3_storage = ObjectStorageApp()
+    dispatcher["s3_storage"] = s3_storage
 
 async def on_shutdown(dispatcher: Dispatcher):
     redis = dispatcher.get("redis")

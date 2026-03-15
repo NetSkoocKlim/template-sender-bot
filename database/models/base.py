@@ -2,7 +2,7 @@ import datetime
 import typing as t
 from dataclasses import dataclass
 
-from sqlalchemy import Column, select, func, BigInteger, desc, TIMESTAMP, Select, delete
+from sqlalchemy import Column, select, func, BigInteger, desc, TIMESTAMP, Select, delete, DateTime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload, DeclarativeBase, Mapped, mapped_column
 
@@ -19,7 +19,10 @@ class BaseModel(Base):
     _must_be_active = False
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()")
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
 
     def to_dict(self) -> t.Dict:
         """
@@ -105,8 +108,10 @@ class BaseModel(Base):
             cls: t.Type[T],
             session: AsyncSession,
             primary_key: int,
+
+            history_get: bool = False
     ) -> T:
-        if cls._must_be_active:
+        if cls._must_be_active and not history_get:
             filter_by = {cls._get_primary_key(): primary_key}
             statement = cls.get_select_statement(filter_by=filter_by)
             return await session.scalar(statement)

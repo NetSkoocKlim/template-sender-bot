@@ -5,9 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.states.states import TemplateAddStates
 from database.models import Template
-from bot.keyboards import get_admin_panel_menu_kb
 
-from bot.keyboards.admin_keyboards import AdminPanelTemplateOptions
+from bot.keyboards.admin.constants import AdminPanelTemplateOptions
+from bot.keyboards.admin.menu import get_admin_panel_menu_kb
+
 from bot.keyboards.common import get_cancel_button
 from bot.lexicon import LEXICON
 from bot.utils.copy_message import copy_text_message
@@ -18,7 +19,7 @@ MAX_TEMPLATE_NAME_LENGTH = 32
 MAX_TEMPLATE_DESCRIPTION_LENGTH = 3496
 
 
-@router.callback_query(F.data == AdminPanelTemplateOptions.add_template)
+@router.callback_query(F.data == AdminPanelTemplateOptions.add_template.name)
 async def handle_add_template(callback: CallbackQuery, state: FSMContext):
     await state.set_state(TemplateAddStates.template_name)
     await state.set_data({"message_id": callback.message.message_id})
@@ -30,12 +31,12 @@ async def handle_add_template(callback: CallbackQuery, state: FSMContext):
 
 @router.message(F.text, TemplateAddStates.template_name)
 async def handle_template_name(message: Message, state: FSMContext):
-    name = message.text.strip()
+    name = ' '.join(message.text.strip().split())
     state_data = await state.get_data()
     message_id = state_data.get("message_id")
     def check_symbols_in_name() -> bool:
         for sym in name:
-            if not sym.isdigit() and not sym.isalpha():
+            if not sym.isdigit() and not sym.isalpha() and not sym.isspace():
                 return False
         return True
     try:
