@@ -59,6 +59,6 @@ async def handle_cancel_edit_template_command(callback: CallbackQuery, state: FS
     )
     await callback.message.answer(
         text=template_info,
-        reply_markup=get_template_edit_inline_kb(template, template_index),
+        reply_markup=get_template_edit_inline_kb(template),
     )
 

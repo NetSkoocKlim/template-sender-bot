@@ -128,14 +128,13 @@ async def handle_template_edit(callback: CallbackQuery, session: AsyncSession, c
             await callback.message.answer(text="Шаблон не найден или был удалён.")
             return
         template_info = html.bold(html.italic("✅ Выбран для рассылки ✅\n\n")) if callback_data.is_chosen else ""
-        template_info = template_info + LEXICON["ADMIN"]["TEMPLATE"]['template_info'].format(callback_data.index,
+        template_info = template_info + LEXICON["ADMIN"]["TEMPLATE"]['template_info'].format(callback_data.name,
                                                                              template.name,
                                                                              template.formated_description)
         await callback.message.edit_text(
             text=template_info,
             reply_markup=get_template_edit_inline_kb(
-                template=template,
-                template_index=callback_data.index
+                template=template
             )
         )
         await callback.answer()

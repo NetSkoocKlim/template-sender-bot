@@ -14,7 +14,6 @@ from .receivers import router as receivers_router
 from .mailing import router as mailing_router
 from .statistic import router as statistic_router
 from bot.lexicon import LEXICON
-from bot.middelwares.database_middleware import database_middleware
 
 router = Router(name=__name__)
 router.include_routers(
@@ -24,9 +23,7 @@ router.include_routers(
     statistic_router
 )
 
-router.message.outer_middleware(database_middleware)
 router.message.filter(IsAdmin())
-router.callback_query.outer_middleware(database_middleware)
 router.callback_query.filter(IsAdmin())
 
 @router.message(Command("admin"))

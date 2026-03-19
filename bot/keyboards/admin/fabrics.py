@@ -6,7 +6,6 @@ from .constants import TemplateEditAction
 class TemplateEditData(CallbackData, prefix="edit_tmplt"):
     action: TemplateEditAction
     id: int
-    index: int | None = None
     creator_id: int
     name: str
     is_chosen: bool = False

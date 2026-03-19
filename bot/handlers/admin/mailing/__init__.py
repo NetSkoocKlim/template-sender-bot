@@ -60,11 +60,12 @@ async def handle_admin_mailing_menu(callback: CallbackQuery,
 
 @router.callback_query(F.data == AdminPanelMailingOptions.view_chosen_template.name)
 async def handle_choose_template_menu(callback: CallbackQuery, admin: User,
-                                      redis: Redis,
                                       session: AsyncSession):
-    chosen_template = await redis.get(admin_chosen_mailing_template_key(admin.id))
-    template_index, template_id, _ = chosen_template.split(":")
-    template = await Template.get(session, int(template_id))
+    template = await Template.get_by_filter(
+        session=session,
+        creator_id=admin.id,
+        is_chosen_for_mailing=True
+    )
     template_info = "Для рассылки будет использоваться следующий шаблон:\n\n" + LEXICON["ADMIN"]["TEMPLATE"]["template_info"].format(
         template.name,
         template.formated_description
@@ -139,14 +140,14 @@ async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
     user_list_length = len(receivers)
     usernames = [receiver.username for receiver in receivers]
     receivers_ids = await User.get_ids_by_usernames(session=session, usernames=usernames)
-    unresolved_usernames = [u for u, uid in zip(usernames, receivers_ids) if uid is None]
+    unresolved_usernames = ["@"+u for u, uid in zip(usernames, receivers_ids) if uid is None]
     failed_usernames = []
     success_usernames = []
     started_at = datetime.datetime.now()
-
     for receiver_username, receiver_id in zip(usernames, receivers_ids):
         if receiver_id is None:
             continue
+        receiver_username = '@' + receiver_username
         attempt = 0
         while True:
             try:
@@ -184,7 +185,7 @@ async def handle_begin_mailing_button(callback: CallbackQuery, admin: User,
         key = f"mailing-result-{admin.id}-{int(datetime.datetime.now().timestamp())}"
         await s3_storage.upload_file(csv_bytes.getvalue(), key)
     except Exception as e:
-        logger.exception(e)
+        logger.error(f"Failed to save mailing result {e}")
         key = None
     finished_at = datetime.datetime.now()
     await Mailing.create(

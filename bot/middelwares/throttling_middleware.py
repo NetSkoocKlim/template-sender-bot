@@ -7,7 +7,7 @@ from aiogram.types import TelegramObject, CallbackQuery, Message
 class ThrottlingMiddleware(BaseMiddleware):
     def __init__(
         self,
-        rate_limit: float = 1,
+        rate_limit: float = 0.4,
     ):
         self.rate_limit = rate_limit
         self.user_buckets: dict[int, float] = {}
@@ -32,5 +32,4 @@ class ThrottlingMiddleware(BaseMiddleware):
         self.user_buckets = {
             uid: timestamp for uid, timestamp in self.user_buckets.items() if timestamp > cleanup_threshold
         }
-
         return await handler(event, data)

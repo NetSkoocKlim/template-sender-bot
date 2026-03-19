@@ -8,6 +8,8 @@ from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.methods import DeleteWebhook
 from aiogram.enums import ParseMode
 
+from bot.middelwares.database_middleware import DatabaseMiddleware
+from bot.middelwares.user_middleware import UserMiddleware
 from database.migrations import run_alembic_upgrade
 from database.redis import init_redis, close_redis, get_redis
 from bot.middelwares.throttling_middleware import ThrottlingMiddleware
@@ -50,6 +52,9 @@ async def main():
     dp.callback_query.outer_middleware(ThrottlingMiddleware())
     dp.update.outer_middleware(RequestLimitMiddleware())
 
+    dp.update.outer_middleware(DatabaseMiddleware())
+    dp.message.outer_middleware(UserMiddleware())
+    dp.callback_query.outer_middleware(UserMiddleware())
 
     dp.include_router(main_router)
     await bot(method=DeleteWebhook(drop_pending_updates=True))

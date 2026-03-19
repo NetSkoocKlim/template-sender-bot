@@ -66,7 +66,6 @@ async def handle_receiver_view_button(callback: CallbackQuery,
 async def handle_download_receivers_list(
         callback: CallbackQuery,
         session: AsyncSession,
-        state: FSMContext
 ):
     saved_users = await Receiver.all(
         session=session,
@@ -75,7 +74,7 @@ async def handle_download_receivers_list(
     await callback.answer()
     with io.BytesIO() as buf:
         for user in saved_users:
-            line = f"{user.username}\n".encode("utf-8")
+            line = f"@{user.username}\n".encode("utf-8")
             buf.write(line)
 
         await callback.bot.send_document(
@@ -135,7 +134,7 @@ async def handle_receiver_list_change(message: Message, state: FSMContext, admin
             username = username.strip()
             username_length = len(username)
             if 6 <= username_length <= 33 and username[0] == '@':
-                usernames.append(username)
+                usernames.append(username[1:])
         return list(set(usernames))
     validated_usernames = _validate_usernames()
 

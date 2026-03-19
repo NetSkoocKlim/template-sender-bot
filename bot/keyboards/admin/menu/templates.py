@@ -40,7 +40,6 @@ def get_templates_inline_kb(
             callback_data=TemplateEditData(
                 action=TemplateEditAction.view_tmplt,
                 id=template.id,
-                index=global_index,
                 creator_id=template.creator_id,
                 is_chosen=template.is_chosen_for_mailing,
                 name=template.name
@@ -62,7 +61,7 @@ def get_templates_inline_kb(
     return builder.as_markup(resize_keyboard=True)
 
 
-def get_template_edit_inline_kb(template: Template, template_index: int):
+def get_template_edit_inline_kb(template: Template):
     builder = InlineKeyboardBuilder()
 
     for action in TemplateEditAction:
@@ -72,7 +71,6 @@ def get_template_edit_inline_kb(template: Template, template_index: int):
                 callback_data=TemplateEditData(
                     action=action,
                     id=template.id,
-                    index=template_index,
                     creator_id=template.creator_id,
                     is_chosen=template.is_chosen_for_mailing,
                     name=template.name
