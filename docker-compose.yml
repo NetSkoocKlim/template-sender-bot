@@ -1,14 +1,63 @@
 services:
+  s3_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: s3_api
+    container_name: s3_api
+    command: python -m app.s3_api.src
+#    command: ["sh", "-c", "sleep infinity"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.10.7-management
+    container_name: rabbitmq
+    env_file:
+      - .env
+    hostname: ${RABBITMQ_HOST}
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit disk_free_limit 2147483648
+
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
   bot:
     build:
-      dockerfile: Dockerfile
       context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: bot
     container_name: sender_bot
     env_file: .env
-    depends_on:
-      - postgres
-      - redis
+    command: python -m app.bot.src
+#    command: ["sh", "-c", "sleep infinity"]
     restart: unless-stopped
+    depends_on:
+      - s3_api
 
   postgres:
     container_name: db_postgres
@@ -49,3 +98,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  rabbitmq_data:

@@ -1,8 +1,6 @@
 import asyncio
 import logging
-import sys
 from logging.config import fileConfig
-from pathlib import Path
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -25,7 +23,7 @@ config.set_main_option("sqlalchemy.url", settings.db.URL)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from database.models import Base
+from shared.src.database.models import Base
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

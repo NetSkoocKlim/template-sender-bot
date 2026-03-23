@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/python:3.14-slim
+FROM python:3.14-slim AS base
 
 WORKDIR /app
 
@@ -12,22 +12,29 @@ RUN apt-get update \
 RUN python -m pip install --upgrade pip setuptools wheel \
     && pip install --no-cache-dir uv
 
-COPY pyproject.toml uv.lock* requirements.txt* /app/
-COPY . /app
 
-RUN set -eux; \
-    if [ -f "./pyproject.toml" ] || [ -f "./uv.lock" ]; then \
-        uv pip install --system -r pyproject.toml; \
-    elif [ -f "./requirements.txt" ]; then \
-        uv pip install --system -r requirements.txt; \
-    else \
-        echo "No dependency file found (pyproject.toml/uv.lock or requirements.txt)"; \
-    fi
+FROM base AS deps
+
+COPY pyproject.toml ./
+COPY shared/pyproject.toml shared/pyproject.toml
+COPY app/s3_api/pyproject.toml app/s3_api/pyproject.toml
+COPY app/bot/pyproject.toml app/bot/pyproject.toml
+
+ARG SERVICE
+RUN uv sync --no-editable --package ${SERVICE}
+
+
+FROM base AS runtime
+
+WORKDIR /app
+
+COPY --from=deps /app/.venv /app/.venv
+COPY . .
+
+ENV PATH="/app/.venv/bin:$PATH"
 
 RUN groupadd -r app && useradd -r -m -d /app -g app app \
     && chown -R app:app /app \
     && chmod -R 777 /app
 
 USER app
-
-CMD ["python", "-m", "bot"]

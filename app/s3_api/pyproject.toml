@@ -1,0 +1,17 @@
+[project]
+name = "s3_api"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "aioboto3>=15.5.0",
+    "fastapi[all]>=0.135.1",
+    "shared"
+]
+
+
+[tool.uv.sources]
+shared = { workspace = true }
+
+
+[tool.uv]
+package = false

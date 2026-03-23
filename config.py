@@ -29,12 +29,24 @@ class RedisConfig(BaseModel):
 class BotConfig(BaseModel):
     TOKEN: str = ""
     SUPERADMIN_ID: str = ""
+    admin_secret: str = Field(default="AiVK0AT")
 
 
 class StorageConfig(BaseModel):
     key_id: str = ""
     secret: str = ""
     bucket_name: str = ""
+
+
+class RabitMqConfig(BaseModel):
+    password: str = ""
+    host: str = ""
+
+    @computed_field()
+    @property
+    def url(self) -> str:
+        return f"ampq://admin:{self.password}@{self.host}:5672/"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -47,8 +59,8 @@ class Settings(BaseSettings):
     bot: BotConfig = Field(default_factory=BotConfig)
     db: DBConfig = Field(default_factory=DBConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
-    secret: str = Field(default="AiVK0AT")
     storage: StorageConfig = Field(default_factory=StorageConfig)
+    rabbitmq: RabitMqConfig = Field(default_factory=RabitMqConfig)
 
 
 settings = Settings()

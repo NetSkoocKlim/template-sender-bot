@@ -1,0 +1,17 @@
+from aiogram import Router, F
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery
+
+from app.bot.src.states.states import ReceiverMenuStates
+from app.bot.src.keyboards.admin.constants import AdminPanelReceiverOptions
+from app.bot.src.keyboards.common import get_cancel_button
+from app.bot.src.lexicon import LEXICON
+router = Router()
+
+@router.callback_query(F.data == AdminPanelReceiverOptions.delete_rcvr.name)
+async def handle_admin_receiver_expansion_button(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(ReceiverMenuStates.delete_receivers)
+    await state.update_data(message_id=callback.message.message_id)
+    await callback.message.edit_text(text=LEXICON["ADMIN"]["RECEIVER"]["delete_list"],
+                         reply_markup=get_cancel_button())
+
