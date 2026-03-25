@@ -2,9 +2,11 @@ import logging
 
 from aio_pika.abc import AbstractIncomingMessage
 from aiogram import Bot
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.src.database import DBHelper
 from shared.src.database.models import Mailing
+from shared.src.database.models.mailing import MailingStatus
 from shared.src.rabbitmq.base_consumer import BaseConsumer
 from shared.src.rabbitmq.message_serializer import MessageSerializer
 from shared.src.rabbitmq.schemas import MailingUploadResultEvent
@@ -22,7 +24,8 @@ class MailingUploadResultConsumer(BaseConsumer):
         super().__init__(topology_manager, queue_name)
         self._bot = bot
 
-    async def _on_message(self, message: AbstractIncomingMessage):
+    @DBHelper.get_session
+    async def _on_message(self, message: AbstractIncomingMessage, session: AsyncSession):
         try:
             payload: MailingUploadResultEvent = MessageSerializer.decode_model(
                 message,
@@ -33,18 +36,19 @@ class MailingUploadResultConsumer(BaseConsumer):
                     text=f"Не удалось сохранить результат рассылки: {payload.error_message}",
                     chat_id=payload.sender_id,
                 )
+                await Mailing.update(
+                    session=session,
+                    primary_key=payload.mailing_id,
+                    save_status=MailingStatus.FAILED.value,
+                )
                 return
-            async with DBHelper.async_session() as session:
-                async with session.begin():
-                    await Mailing.update(
-                        session=session,
-                        primary_key=payload.mailing_id,
-                        csv_result_key=payload.s3_key,
-                    )
-            # await self._bot.send_message(
-            #     text=f"Результат рассылки ({payload.send_at.strftime("%d.%m.%Y %H:%M:%s")}) был успешно сохранён",
-            #     chat_id=payload.sender_id,
-            # )
+
+            await Mailing.update(
+                session=session,
+                primary_key=payload.mailing_id,
+                s3_key=payload.s3_key,
+                save_status=MailingStatus.SAVED.value
+            )
         except Exception as e:
             logger.error(f"Error while handling mailing save result: {e}")
 

@@ -118,7 +118,7 @@ class Paginator:
                 payload["page"] = int(page)
             raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
             encoded = _b64encode_str(raw)
-            logger.info("Encoded anchor for page %s (values count %d)", page, len(values))
+            logger.debug("Encoded anchor for page %s (values count %d)", page, len(values))
             return encoded
         except Exception:
             logger.exception("Failed to encode anchor values: %r", values)
@@ -126,7 +126,7 @@ class Paginator:
 
     @staticmethod
     def _decode_anchor(cursor: str) -> t.Tuple[t.List[t.Any], t.Optional[int]]:
-        logger.info("Decoding cursor (len %d)", len(cursor) if cursor else 0)
+        logger.debug("Decoding cursor (len %d)", len(cursor) if cursor else 0)
         try:
             raw = _b64decode_str(cursor)
             parsed = json.loads(raw)
@@ -210,7 +210,7 @@ class Paginator:
         if page_size is None:
             page_size = getattr(cls, "PAGE_SIZE", 50)
 
-        logger.info("Paginate called: page_size=%d anchor=%r forward=%s compute_page_info=%s is_deletion=%s",
+        logger.debug("Paginate called: page_size=%d anchor=%r forward=%s compute_page_info=%s is_deletion=%s",
                     page_size, anchor[:50] if anchor else None, forward, compute_page_info, is_deletion)
 
         if anchor_columns is None:
@@ -244,7 +244,7 @@ class Paginator:
         if anchor:
             try:
                 anchor_values, incoming_page = cls._decode_anchor(anchor)
-                logger.info("Applying keyset filter from anchor, page=%r values=%r", incoming_page, anchor_values)
+                logger.debug("Applying keyset filter from anchor, page=%r values=%r", incoming_page, anchor_values)
                 keyset_filter = cls._build_keyset_filter(anchor_columns, anchor_values, forward, is_deletion)
                 stmt = stmt.where(keyset_filter)
             except Exception:
@@ -254,7 +254,7 @@ class Paginator:
         try:
             executed = await session.execute(stmt.limit(page_size + 1))
             rows = list(executed.scalars().all())
-            logger.info("Executed statement, fetched rows=%d", len(rows))
+            logger.debug("Executed statement, fetched rows=%d", len(rows))
         except Exception:
             logger.exception("Database execution failed for pagination")
             raise
@@ -284,24 +284,24 @@ class Paginator:
             if forward:
                 if has_more:
                     next_cursor = cls._encode_anchor(last_vals, current_page + 1)
-                    logger.info("Next cursor for page %d generated after forward moving", current_page + 1)
+                    logger.debug("Next cursor for page %d generated after forward moving", current_page + 1)
                 if current_page > 1:
                     prev_cursor = cls._encode_anchor(first_vals, current_page - 1)
-                    logger.info("Prev cursor for page %d generated after forward moving", current_page - 1)
+                    logger.debug("Prev cursor for page %d generated after forward moving", current_page - 1)
             else:
                 next_cursor = cls._encode_anchor(last_vals, current_page + 1)
-                logger.info("Next cursor for page %d generated after backward moving", current_page + 1)
+                logger.debug("Next cursor for page %d generated after backward moving", current_page + 1)
                 if has_more:
                     prev_cursor = cls._encode_anchor(first_vals, max(1, current_page - 1))
-                    logger.info("Prev cursor for page %d generated after backward moving", max(1, current_page - 1))
+                    logger.debug("Prev cursor for page %d generated after backward moving", max(1, current_page - 1))
 
         total_pages = None
         if compute_page_info:
             try:
                 total = await cls._Model.count_total(session=session, base_stmt=base_stmt)
                 total_pages = max(1, math.ceil(total / page_size))
-                logger.info("Computed total pages: %d (total rows=%d page_size=%d)", total_pages, total, page_size)
-            except Exception:
+                logger.debug("Computed total pages: %d (total rows=%d page_size=%d)", total_pages, total, page_size)
+            except Exception as e:
                 logger.exception("Failed to compute page info (total pages)")
                 raise
 

@@ -1,13 +1,16 @@
 import datetime
 
-
-from sqlalchemy import Column, Integer, BigInteger, Text, TIMESTAMP, JSON, ForeignKey, DateTime
-from sqlalchemy.dialects.mysql import VARCHAR
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Integer, BigInteger, VARCHAR, Text, TIMESTAMP, JSON, ForeignKey, DateTime, Enum
+from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import BaseModel
 
+import enum
+
+class MailingStatus(enum.IntEnum):
+    SAVED = 0
+    PENDING = 1
+    FAILED = 2
 
 
 class Mailing(BaseModel):
@@ -27,5 +30,14 @@ class Mailing(BaseModel):
     unresolved_count: Mapped[int] = mapped_column(Integer, nullable=False)
     delivery_failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    csv_result_key: Mapped[str | None] = mapped_column(VARCHAR(255))
+    s3_key: Mapped[str | None] = mapped_column(VARCHAR(255))
+    save_status: Mapped[MailingStatus] = mapped_column(
+        Enum(
+            MailingStatus,
+            native_enum=False,
+            values_callable=lambda enum_cls: [str(item.value) for item in enum_cls],
+        ),
+        nullable=False,
 
+        server_default=str(MailingStatus.PENDING.value)
+    )

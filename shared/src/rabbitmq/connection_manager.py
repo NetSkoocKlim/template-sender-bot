@@ -22,7 +22,7 @@ class RabbitConnectionManager:
         logger.info("[✓] Connected: %r", self._connection)
         return self._connection
 
-    async def get_connection(self) -> AbstractRobustConnection | None:
+    async def get_connection(self) -> AbstractRobustConnection:
         if self._connection is None or self._connection.is_closed:
             raise RuntimeError("RabbitMQ connection is not established")
         return self._connection

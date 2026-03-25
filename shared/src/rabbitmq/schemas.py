@@ -19,7 +19,7 @@ class UploadMailingCommand(MailingMessageModel):
     file_bytes_b64: str
     content_type: str = "text/csv"
 
-    attempt: int = 1
+    attempt: int = 0
 
 
 class MailingUploadResultEvent(MailingMessageModel):

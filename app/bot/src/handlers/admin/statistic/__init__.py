@@ -13,6 +13,7 @@ from app.bot.src.keyboards.admin.menu import (get_admin_panel_statistic_menu_kb,
 from app.bot.src.keyboards.admin.menu.statistic import get_mailing_template_view_kb
 from app.bot.src.lexicon import LEXICON
 from shared.src.database.models import User, Mailing, Template
+from shared.src.database.models.mailing import MailingStatus
 from shared.src.database.paginator.anchor_store import get_page_anchor_state
 from shared.src.database.paginator.paginator import MailingPaginator
 from app.bot.src.services.object_storage.app import ObjectStorage
@@ -55,7 +56,7 @@ async def statistic_menu_handler(callback: CallbackQuery,
     await callback.answer()
     await callback.message.edit_text(
         text=LEXICON["ADMIN"]["STATISTIC"]["main"].format(mailing_count, last_mailing_date, create_short_report()),
-        reply_markup=get_admin_panel_statistic_menu_kb(last_mailing.csv_result_key)
+        reply_markup=get_admin_panel_statistic_menu_kb(last_mailing)
     )
 
 

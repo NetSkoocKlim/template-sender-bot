@@ -17,7 +17,7 @@ class MailingResultSender(RabbitPublisher):
 
 
 
-    async def publish_success_mailing_result(
+    async def publish_mailing_result(
             self,
             command: MailingUploadResultEvent
     ):

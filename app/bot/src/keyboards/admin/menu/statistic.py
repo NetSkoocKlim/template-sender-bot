@@ -6,15 +6,16 @@ from app.bot.src.keyboards.admin.builders import add_pagination_footer
 from app.bot.src.keyboards.admin.constants import AdminPanelStatisticOptions, MailingInfoOptions
 from app.bot.src.keyboards.admin.fabrics import DownloadMailingData, MailingViewData, MailingTemplateViewData
 from shared.src.database.models import Mailing
+from shared.src.database.models.mailing import MailingStatus
 
 
-def get_admin_panel_statistic_menu_kb(last_mailing_key: str | None):
+def get_admin_panel_statistic_menu_kb(mailing):
     builder = InlineKeyboardBuilder()
 
-    if last_mailing_key:
+    if mailing.save_status == MailingStatus.SAVED.value:
         builder.button(
             text=AdminPanelStatisticOptions.download_mlngRes.value,
-            callback_data=DownloadMailingData(key=last_mailing_key)
+            callback_data=DownloadMailingData(key=mailing.s3_key).pack()
         )
 
     for option in AdminPanelStatisticOptions:
@@ -63,10 +64,10 @@ def get_mailings_inline_kb(
 def get_mailing_info_inline_kb(mailing: Mailing, template_id: int):
     builder = InlineKeyboardBuilder()
 
-    if mailing.csv_result_key is not None:
+    if mailing.save_status == MailingStatus.SAVED.value:
         builder.button(
             text=MailingInfoOptions.download_lst_mlngRes.value,
-            callback_data=DownloadMailingData(key=mailing.csv_result_key).pack()
+            callback_data=DownloadMailingData(key=mailing.s3_key).pack()
         )
 
     builder.button(

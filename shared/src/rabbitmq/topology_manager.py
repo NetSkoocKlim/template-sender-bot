@@ -2,8 +2,7 @@ import logging
 from aio_pika.abc import AbstractExchange, AbstractQueue, ExchangeType
 
 from .channel_manager import RabbitChannelManager
-from .routes import QueueBinding, Exchanges, Bindings
-
+from .routes import QueueBinding, Exchanges, ALL_BINDINGS
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +24,9 @@ class RabbitTopologyManager:
         )
 
         self._exchanges[events_exchange.name] = events_exchange
-        for binding in Bindings.ALL:
+        for binding in ALL_BINDINGS:
             await self._declare_and_bind_queue(binding)
-        logger.info("[] RabbitTopologyManager was successfully initialized %r", self)
+        logger.info("[✔] RabbitTopologyManager was successfully initialized %r", self)
 
 
 
@@ -35,10 +34,11 @@ class RabbitTopologyManager:
         channel = await self._channel_manager.get_channel()
 
         queue = await channel.declare_queue(
-            name=binding.queue,
+            binding.queue,
             durable=binding.durable,
             exclusive=binding.exclusive,
             auto_delete=binding.auto_delete,
+            arguments=binding.arguments,
         )
 
         exchange = self.get_exchange(binding.exchange)
